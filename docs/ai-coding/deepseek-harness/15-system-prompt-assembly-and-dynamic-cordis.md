@@ -97,5 +97,5 @@
 - [能力接缝图（ctx.typert / typertGateway / apiProxy / dynamicCordisRunner 行）](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/capability-seams.md)：这几个 core 服务的职责
 - [自指 Cordis 工具集设计 Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md)：沙箱语义与设计决策
 
-上一篇：[dsh tools 注册表与守卫管线源码导读](./14-tools-registry-guards-source-walkthrough.md)
+上一篇：[工具执行管线与守卫：dsh 从 tool_call 到结果的七道关卡](./13-tool-execution-pipeline-and-guards.md)
 下一篇：[🔍 LLM 适配器：dsh 的 stream 契约源码导读](./16-llm-adapter-stream-contract-source-walkthrough.md)

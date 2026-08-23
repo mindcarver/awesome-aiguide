@@ -140,7 +140,7 @@ Spec-Driven Development 框架的完整中文指南，从入门到实战。覆�
 
 ### DeepSeek Harness 架构深读系列
 
-围绕 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`，DeepSeek 开源的"一切皆插件"agent harness）的架构拆解系列，共 42 篇。不是使用教程：逐层拆 Cordis 插件范式、turn/step 驱动器、会话日志"模型可见即可重建"规矩、能力接缝（换一个 provider 等于换整个产品）、执行子系统与源码导读，收尾做 dsh vs Claude Code vs Cursor vs Codex 六维横评。与 [Harness 工程专题](./harness-engineering/README.md)（学科通论）互补：那套讲 harness 是什么，这套在真实仓库里一行行验证。详见 [系列导航](./deepseek-harness/README.md)。
+围绕 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`，DeepSeek 开源的"一切皆插件"agent harness）的架构拆解系列，共 41 篇。不是使用教程：逐层拆 Cordis 插件范式、turn/step 驱动器、会话日志"模型可见即可重建"规矩、能力接缝（换一个 provider 等于换整个产品）、执行子系统与源码导读，收尾做 dsh vs Claude Code vs Cursor vs Codex 六维横评。与 [Harness 工程专题](./harness-engineering/README.md)（学科通论）互补：那套讲 harness 是什么，这套在真实仓库里一行行验证。详见 [系列导航](./deepseek-harness/README.md)。
 
 首篇：[模型 + Harness = Agent：DeepSeek Harness 是什么](./deepseek-harness/01-model-plus-harness-what-is-dsh.md)——`dsh` 是 DeepSeek 把"模型之外的一切"开源出来的全插件化运行时，不是又一个 AI 编程客户端。
 

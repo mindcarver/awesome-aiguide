@@ -143,4 +143,4 @@
 - [子系统：approval 与 permission-presets](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/approval.md)：fail closed 的权限决策
 
 上一篇：[事件系统：dsh 的四种派发模式与 waterfall 短路](./11-event-system-four-dispatch-modes.md)
-下一篇：[工具执行管线：dsh 从 tool_call 到结果的七道关卡](./13-tool-execution-pipeline.md)
+下一篇：[工具执行管线与守卫：dsh 从 tool_call 到结果的七道关卡](./13-tool-execution-pipeline-and-guards.md)
