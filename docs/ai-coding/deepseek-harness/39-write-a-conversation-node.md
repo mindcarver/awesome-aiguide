@@ -1,28 +1,41 @@
 # 给 dsh 写一个 Conversation Node：Web 自定义渲染
 
-> Conversation Node 是把一组相关的会话事件折叠成一个有状态视图单元的机制，你写一个 Definition 声明怎么匹配事件、怎么构建状态、怎么渲染，引擎保证回放正确、分页不乱、性能是常数级。
-> 这一篇拆 `ConversationNodeDefinition` 的结构、三条事件摄入路径、性能不变量，以及 keyed renderer 的消费方式。
+> Conversation Node 是把一组相关的会话事件折叠成一个有状态视图单元的机制。你写一个 Definition，声明哪些事件属于我、状态怎么从事件里长出来、什么时候发布、发布成什么渲染数据；引擎兜住剩下的全部：回放、分页一致性、乱序到达、Context 生命周期、渲染调度。写好一个 Node 的难度几乎全部压在两件事上：事件族设计得可回放，以及 append 路径不做全窗口扫描。
+> 两条最值得记住的纪律：永远不要把一个 update 分配给"最近一个还没结束的"Context，身份必须来自事件自己携带的持久 id；一个 Node 的 key 只能来自 kind 加 id，永远不能来自 seq 或渲染位置，running 变 settled 的瞬间组件不 remount。
 
-## 什么是 Conversation Node
+## 自己监听事件为什么注定失败
 
-Web 客户端的对话视图（Chat view）由一排排 Node 组成。一个 Node 可能是一条用户消息、一段 assistant 回复、一个工具调用结果，也可能是你自己定义的业务单元（比如一个代码审查进度卡片、一个目标追踪面板）。
+想给对话界面加一张自己的卡片，比如一个代码审查的进度条，最直觉的写法是：开一个事件订阅，把属于这个审查的事件攒进一个自己的 store，store 变了就重渲染。单机演示这样能跑，放进 dsh 的 Web 客户端里它会在三个真实场景下坏掉。
 
-Conversation Node 就是后者的扩展机制。它做的事是：**把一组相关的会话事件折叠成一个有状态的视图单元。** 你不需要自己监听事件、自己管理状态、自己触发重渲染。你写一个 Definition，声明四件事：
+第一个场景是往回翻页。会话历史不是一次性到齐的，客户端从尾部开始一页一页往回要。用户滚到顶上，引擎加载更早的一页，这一页里可能有整条审查的 start 事件，而你已经用后到的 update 事件渲染了半天。自己管状态的代码此时要回答：这些已经显示的进度，要不要推倒重来？按什么顺序重算？
 
-1. 哪些事件属于这个 Node（match）
-2. 从事件里怎么构建状态（start + update）
-3. 状态变化什么时候发布（publication）
-4. 发布成什么样的渲染数据（buildViewNode）
+第二个场景是 resync。断线重连或检测到日志间隙时，引擎会把加载的窗口整个重建。你自己攒的那份内存状态没有任何办法跟着重建，因为它不是从日志推出来的，是沿着时间一点点捡来的。
 
-引擎负责剩下的：事件回放、分页一致性、Context 生命周期、渲染调度。
+第三个场景是乱序到达。网络让事件的到达顺序和日志顺序不一致是常态。你按到达顺序折叠状态，折叠出来的东西就和日志的真实顺序对不上，而且这种错没有任何报错，它只是安静地错着。
 
-这套机制的前提是 Host 已经记录了相关事件。你在 Host 侧的业务插件产生 session 事件（通过 `SessionEventMap` 声明合并），在 Client 侧的插件里写 Definition 消费它们。
+这三个场景指向同一个根因：你把"状态"存在了到达顺序里，而到达顺序不是事实，日志顺序才是。Conversation Node 机制的全部设计就是把状态搬回日志顺序上：引擎持有事件窗口，按 seq 升序回放，你的状态是回放的产物而不是到达的沉积物。
 
-## 设计一个可回放的事件族
+## 心智模型：账本与视图分离
 
-写 Definition 之前，先设计事件族。核心原则：选一个稳定的业务 id，每个事件要么携带它，要么能从自己的 payload 推导出来。客户端绝不能把一个 update 分配给"最近一个还没结束的"Context。
+把会话日志想成一本账本，每行一个事件，每行有全局递增的行号(seq)。对话界面不是账本本身，是账本的一个投影。dsh 在这套投影机制里分了两层角色：业务插件在 Host 侧往账本上记账，视图插件在 Client 侧声明"这一族行怎么折叠成一张卡片"。
 
-以一个代码审查 Job 为例：
+折叠的配方就是 Definition。它声明四件事：哪些事件属于这个 Node(match)，状态怎么从事件里构建(start 加 update)，状态变化什么时候对外发布(publication)，发布成什么样的渲染数据(buildViewNode)。剩下的全是引擎的责任：账本一页页加载、乱序归位、Context 生命周期、渲染调度，你一个都不用管。
+
+有一个前提要先说清楚：引擎只能折叠已经被记到账本上的事件。所以写 Definition 之前，你先要在 Host 侧的业务插件里把事件记全。事件的类型通过 `SessionEventMap` 的声明合并注册，在 `declare module '@deepseek-ai/dsh-session/types'` 里给接口加三条，`'review/start'` 对应开始载荷，`'review/progress'` 对应进度载荷，`'review/end'` 对应结束载荷。branded id 类型跟着 producer 走，跨进程边界使用，防止审查的 id 和别的字符串撞在一起还查不出类型错误。
+
+## 事件族设计：先想清楚再动手
+
+Definition 写得好不好，八成取决于事件族设计得好不好。三条规则，每条都有具体的失败方式。
+
+第一条：每个事件要么携带一个稳定的业务 id，要么能从自己的 payload 推导出来。被明文禁止的反模式是"把 update 分给最近一个还没结束的 Context"。这个写法在单事件顺序到达时完全正确，于是它能通过你所有的手动测试；翻页把两条审查的进度交错加载时，它把 A 的进度记到 B 头上，而且没有任何机制会告诉你错了。稳定 id 意味着每个事件自己就够定位自己的归属，不需要任何"当前正在进行的那个"这类运行期记忆。
+
+交错不是臆造的边角，是常态。用户先对 PR 提了审查 A，问到一半又对另一个文件提了审查 B，日志里就是 A 的 progress、B 的 progress、A 的 end、B 的 progress 这样犬牙交错。按 id 归属，A 和 B 各自的状态在回放下毫无歧义；按"最近的"归属，B 的最后一条进度会被算给已经结束的 A，或者反过来，取决于事件到达的运气。
+
+第二条：每个 `(kind, id)` 最多一个 start 事件，第二个 start 直接失败，id 永不复用。一次代码审查对应一个 `reviewId`，从 start 到 end 用同一个，开新的审查就发新的 id。听起来像废话，但它是回放确定性的前提：如果同一个 id 可以有两次开始，按 seq 回放时状态就有了两种合法读法，整套机制就没有确定答案了。
+
+第三条：增量事件必须在按 seq 升序回放时产生确定性的 State，不能依赖 live-only 的内存状态。设计上更推荐整值 checkpoint：进度事件直接带"当前完成了几项、还剩几项"的完整快照，而不是只带"又完成了一项"的增量。整值checkpoint对窗口边界免疫，start 落在已加载窗口之外时，一个带完整状态的 terminal 或 checkpoint 事件照样能撑起渲染。纯增量在此处无解，只能等 start 到达。
+
+以审查 Job 为例，事件族长这样：
 
 | 事件 | 角色 | 必须携带的持久事实 |
 |---|---|---|
@@ -30,95 +43,104 @@ Conversation Node 就是后者的扩展机制。它做的事是：**把一组相
 | `review/progress` | 更新 | 同一个 `reviewId`、坐标、可回放的进度 |
 | `review/end` | 更新 | 同一个 `reviewId`、坐标、最终摘要 |
 
-每个 `(kind, id)` 最多有一个 start 事件。一个只有单事件的业务可以用事件自身的稳定身份（比如 `event.seq`）作为 Definition-local id。
+只有一个事件的简单业务可以偷懒：用事件自身的稳定身份(比如 `event.seq`)当 Definition-local id，start 和 update 就是同一个事件。这在机制里是合法的捷径，代价是这条事件既是开始也是结束，后续想加第二个事件时 id 体系要重新设计。
 
-事件类型通过 `SessionEventMap` 声明合并注册：在 `declare module '@deepseek-ai/dsh-session/types'` 里给 `interface SessionEventMap` 加三条，`'review/start'` 对应 `ReviewStartData`，`'review/progress'` 对应 `ReviewProgressData`，`'review/end'` 对应 `ReviewEndData`。branded id 类型（`ReviewId`）跟着 producer 走，跨进程边界使用，防止和别的字符串混淆。
+还有一条容易踩的协议边界：到达顺序可以反，业务日志顺序不能反。一个 update 事件的 seq 早于它的 start 事件的 seq，回放直接失败并报协议错误。翻译成业务语言：你不能先记账"审查结束了"再记账"审查开始了"，哪怕现实里你是先收到结束通知。事件写入日志之前把顺序摆正，是 producer 的责任，不是引擎能修的。
 
-增量事件是支持的，但有一条硬要求：**每个 delta 必须在按 `seq` 升序回放时产生确定性的 State**，不能依赖 live-only 的内存状态。如果当前加载的历史窗口只有 update 没有 start，assembler 保留一个 pending Context，不构建 State，直到更早的页面提供 start。如果产品必须在 start 加载前就渲染，一个 terminal 或 checkpoint 事件必须携带足够的 whole fallback state。
+## Definition 的成员契约
 
-## ConversationNodeDefinition 的结构
+落到代码，一个 Definition 是一个对象，审查 Job 的定义叫 `reviewDefinition`，类型是 `ConversationNodeDefinition 加上你的 State 类型参数。逐个成员看契约，看的时候记住一个总的分层：match 管身份，start 和 update 管状态，publication 管节奏，buildLocationData 和 buildViewNode 管产出。
 
-落到代码，一个 Definition 是一个对象，成员正好对应上面那四个问题，外加两个配置字段。审查 Job 的定义叫 `reviewDefinition`，类型是 `ConversationNodeDefinition<ReviewState>`，逐个成员看契约。
+`match(event)` 是身份提取器，不是折叠器。它只看当前这一个事件，返回 Definition-local 的 id 加生命周期角色(start 或 update)，不属于自己返回 null。它拿不到 Context、拿不到历史、拿不到 Reader，这个刻意的隔离是为了让匹配在任何摄入路径下表现一致：replace 时对每个事件问一遍，append 时只对最新的一个问一遍，答案必须相同。审查 Job 的匹配就三分支：start 事件返回 start 角色，progress 和 end 返回同一个 id 的 update 角色，其余返回 null。每个 Session 还有一个唯一的 fallback Definition，只在所有普通 Definition 都返回 null 时被问到，用来接住谁都不认的事件。
 
-`match(event)` 是身份提取器，不是 fold。它只看当前事件，返回 Definition-local id 和生命周期角色（`start` 或 `update`），不匹配返回 null。匹配后，assembler 按 `(kind, id)` 定位 Context。审查 Job 的匹配逻辑就三分支：`review/start` 返回 start 角色，`review/progress` 和 `review/end` 返回同一个 id 的 update 角色，其余返回 null。
+`start(context, match)` 在 start 事件上跑一次，是唯一的状态初始化点，返回 undefined 是契约错误。`update(context, match)` 在每个 update 事件上跑，返回新状态，返回 undefined 同样失败。推荐返回新的不可变值，但原地修改后返回同一个对象也有相同的 adoption 语义，引擎采纳的是返回值而不是引用比较。更细的一条：发布不按 State 引用相等做门控，每个被接受的 update 都会递增 Context 的 revision 并重新评估它的 Reader 消费者，哪怕你返回的对象没变。也就是说"内容没变就不触发下游"这种优化引擎不提供，需要的话自己在上层做。
 
-`start(context, match)` 在 start 事件时调用一次，返回初始 State；`update(context, match)` 在每个 update 事件时调用，返回新 State。引擎采纳返回值：推荐返回新的不可变值，原地修改后返回同一个对象也有相同的 adoption 语义。审查 Job 的状态就是这么长的：start 建立坐标、标题、`completed: 0`、`status: 'running'`；progress 覆盖完成度；end 置 100、标记完成、带上摘要。
+`publication(match)` 控制状态变化物化成视图发布的节奏，三档。`immediate` 是默认档，走微任务，给结构性或终止性变化用。`animation-frame` 把同一帧里的多次发布合并到下一帧，给高频可见增量用，assistant 的流式 token 就是这一档，不合并的话每个 token 一次 React 通知，界面会被自己的输出淹没。`none` 完全不发布，给只喂给后续 publication 的中间状态用，inbox 这种不可见容器就是典型。要点是 cadence 只合并视图发布，update 本身永远按日志顺序逐个执行，状态不会被合并，被合并的只有"通知 React 重画"这一下。一个 Context 在一次 append 里命中多个档位时，最高紧迫度获胜，immediate 压过 animation-frame 压过 none。
 
-`publication(match)` 控制状态变化什么时候物化成视图发布，三档：`immediate` 给结构性或终止性变化，`animation-frame` 给高频可见 delta（合并到下一帧），`none` 给只喂给后续 publication 的变化。引擎仍然按 log 顺序应用每个 update，cadence 只合并视图发布。
+`buildLocationData(context, scope)` 是可选的跨 Node 通道。它把 Definition 拥有的数据发布到引擎拥有的 Turn 或 Step 上，scope 不是 step 时返回 null。Assembler 永远先物化 step 再物化 turn，顺序是引擎保证的。消费方通过受约束的 hook(如 `useTurnData`)读取，拿到的是只读的 `data.get(key)`，没有遍历、没有修改。值类型通过两张 map 的声明合并注册：`ConversationStepDataMap` 管 Step 层，`ConversationTurnDataMap` 管 Turn 层。
 
-`buildLocationData(context, scope)` 可选，把 Definition 拥有的数据发布到引擎拥有的 Turn 或 Step 上。同一个 Location 的另一个 Node 可以通过受约束的 slot hook（如 `useTurnData(key)`）消费这个值，不需要接收 Session 或扫描 `snapshot.chat.nodes`。
+`buildViewNode(context)` 产出渲染就绪的 Node，和 `target` 必须成对出现，声明一个 target 拥有的渲染贡献。三条纪律。保留 `context.key` 作为 React 身份，引擎会校验。`anchorSeq` 从持久排序证据里选：start 的 seq，没有就第一个匹配的 seq，再没有就 0，它决定这张卡片在对话流里的锚点位置，所以不能来自"当前渲染到第几行"。一旦 target Node 发布了，就持续返回同一个 key，需要暂时离开可见流时用 `visibility: 'hidden'`，不要返回 null 撤回它，一个已经物化的非 null Node 在增量路径上变回 null 是被引擎拒绝的。
 
-`buildViewNode(context)` 产出渲染就绪的 Node，和 `target` 必须一起出现，声明一个 target 拥有的渲染贡献。两条纪律：保留 `context.key` 作为 React 身份，从持久排序证据里选 `anchorSeq`，只返回 renderer-ready 数据；一旦 target Node 发布了，持续返回同一个 key，需要暂时离开可见流时用 `visibility: 'hidden'`，不要返回 null 撤回它。
+`current` 和 hidden 的区别值得单独说，因为它来自一个真实的实现需求。引擎区分"从未物化过"和"物化过但现在隐藏"两种状态，assistant 用这个区分做重试抑制：一条流式回复被中断后进入重试，重试期间旧卡片隐藏而不是销毁，重试成功旧卡片回来，React 的组件状态(滚动的位置、展开的折叠块)全程没丢。如果你的业务也有"暂时不可见但别拆掉"的形态，这是同一条路。
 
-## 三条事件摄入路径
+最后一条契约边界：没有通用的 `end()` 生命周期。终态就是一个普通的 update 事件，你的 State 里自己标 `status: 'done'`。引擎不理解"结束"，它只理解"又一个 update"，这让引擎侧少一整个概念，代价是你的状态机自己收尾。
 
-引擎从三个路径接收事件。历史可以从尾部往回一页一页要，但每个被接受的页面都先归一成按 `seq` 升序，再做 State 回放。三条路径对 Definition 呈现的行为不同：
+## 三条摄入路径：一次完整的使用过程
 
-| 路径 | 什么时候发生 | 引擎做什么 | Definition 看到什么 |
-|---|---|---|---|
-| Replace | 打开、resync、gap 修复 | 重建加载的窗口，每个事件对每个 Definition 匹配一次，回放每个已启动的 Context | start 后跟按 seq 升序的 update；只有 update 的 pending Context 保持无 State |
-| Prepend | 加载一个更早的页面 | 只匹配新的更早事件，按 `(kind, id)` 合并进现有 Context，保留已有 keyed node，只回放受影响的 Context 和依赖 | 新发现的 start 激活它收集的 update；变化的 Location 或 predecessor 可能重跑 Context |
-| Append | 一个 live 事件到达 | 对每个 Definition 的 `match` 调用一次，按 key 查找匹配的 Context，只更新那个 Context | 一次 update、一次请求的 publication，不扫描任何现有 Context |
+引擎从三个路径接收事件，历史可以从尾部往回一页一页要，但每个被接受的页面都先归一成按 seq 升序再做回放。用一个真实的使用时间线把三条路径串起来。
 
-三条路径的设计目标是一句话：历史可以是分页的、可以是乱序到达的、可以是 live 追加的，最终的 State 在任何情况下都是正确的。支撑它的还是上一节那条可回放的 start + update。
+用户打开一个有审查记录的会话，Replace 路径跑起来。它清理全部 Context、索引和依赖，把窗口内的事件按 seq 排好，每个事件对每个 Definition 匹配一次，回放每个已启动的 Context，最后让视图构建器整体 replace。触发 Replace 的不只是初次打开：断线 resync、日志间隙修复、注册表变化(热重载了一个 Definition)都会走这条路。它的语义是"不信任之前的一切，从窗口重推"。
 
-## 性能不变量：不做全窗口扫描
+用户往上滚，加载更早的一页，Prepend 路径跑。它先去掉和已加载窗口重叠的 seq，只匹配真正新增的更早事件，按 `(kind, id)` 合并进现有 Context，已有 keyed Node 的身份全部保留，只回放受影响的 Context 和它们的依赖，最后视图构建器做增量 upsert。这里藏着 pending Context 的复活机制：如果之前窗口尾部只有审查的 progress 没有 start，assembler 早就为它建了一个 pending Context，事件都收着、状态不构建；更早的页面把 start 送来，这个 Context 立刻激活，把收集的 update 按 seq 升序一次性回放，产出的结果和一开始就完整加载一模一样。这也是验证机制正确性的核心命题：相等的事件窗口，不管从哪条路径进来，产出相等的状态和 Node。
 
-这是 Definition 代码必须守住的硬约束：
+live 事件到达，Append 路径跑。它只接受紧贴窗口尾部的连续事件，对每个 Definition 的 match 调一次，按 key 常数时间找到匹配的 Context，只更新那一个，不扫描任何现有 Context。一条审查的 progress 到达，全窗口可能有一万个事件、二十个 Context，这次 append 的成本是 D 次匹配加一次哈希查找，和窗口大小无关。
 
-> With D registered Definitions, one incoming event performs D current-event matches and constant-time Context-key lookup after a match.
+Prepend 还负责解决一个微妙的依赖问题。`reader.previous(kind)` 返回的是 start seq 之前最近的已启动 Context，而"之前最近"这个判断依赖当前加载的窗口：也许更早的页面里还有一个更近的前驱。所以依赖查询的 miss 分两种。窗口还有更多页没加载(hasMore 为 true)时，miss 是暂时的，依赖被标记为 provisional；一个空页把 hasMore 翻成 false，之前的暂时 miss 被正式解析为"确实没有前驱"。如果后来一个更早的 prepend 供上了更近的前驱、关闭了一个之前不知道的间隙、或者修改了前驱的状态，引擎从 start 重跑依赖的 Context，按 seq 升序回放。依赖永远指向严格更早的 Context，时间上单向，传递重放不可能绕成环。
 
-D 个注册的 Definition，一个事件到来时做 D 次当前事件匹配，匹配后做常数时间的 Context-key 查找。
+事件到坐标的映射也有兜底阶梯。一个 Context 的位置取 start 事件的 Location，没有 start 就取第一个匹配事件的 Location，都没有就落成 unresolved。位置一共四种形态：session 级、turn 级、step 级、unresolved，各带 open、closed、unknown 的状态。窗口往前翻页会重建这些位置事实，但没变的 Turn 和 Step 引用原样保留，不因为一次 prepend 就让下游的引用比对全部失效。业务侧的含义很实际：审查卡片挂在哪个 Turn 下面，由事件自己携带的坐标决定，坐标缺失时引擎给出明确的 unresolved 而不是一个猜出来的位置，宁可标"不知道"，不编一个像样的答案。
 
-这意味着 Definition 代码不能在正常的 append 路径上：
+## 性能不变量：append 路径的硬约束
 
-- 遍历完整的事件窗口
-- 遍历所有 Context
-- 遍历 `context.matches`
-- 遍历已渲染的 Node 集合
+Definition 代码必须守住一条量化的不变量：注册了 D 个 Definition 时，一个事件的到来做 D 次当前事件匹配，匹配后做常数时间的 Context-key 查找。append 的成本是 O(D) 加 O(1)，和窗口里有多少事件、多少 Context、多少已渲染 Node 全部无关。
 
-用什么替代？用 State 存累积事实，用 Location data 做 same-Turn/Step 共享，用 `reader.previous()` 做索引化的 predecessor 依赖查询。
+这条不变量翻译成禁令就是四不准：在 append 路径上不准遍历完整的事件窗口，不准遍历所有 Context，不准遍历 `context.matches`，不准遍历已渲染的 Node 集合。违反任何一条，append 从 O(D+1) 退化到 O(N)，一个长会话越用越卡，而且卡得毫无必要。
 
-`reader.previous(kind)` 在 `start` 时可用，返回当前 start seq 之前最近的已启动 Context 的只读数据，assembler 记录这个依赖。如果后来一个更早的 prepend 提供了更近的 predecessor、关闭了一个之前未知的窗口间隙、或修改了 predecessor State，引擎会从 start 重跑依赖的 Context，按 seq 升序回放 update。reader 不暴露业务特定的查询方法，也不授予对另一个 Context 的修改权。
+替代方案机制都给了。累积事实放进 State，不要每次都从头数事件。同 Turn 或同 Step 的共享走 Location data，消费方 `data.get(key)` 一次拿到，不要互相扫描。前驱查询用 `reader.previous(kind)`，它是索引化的一次查询，引擎替你记账依赖，比"扫一遍找上一个"又快又正确。
 
-## keyed renderer：React 组件怎么消费
+`reader.previous` 只在 `start` 里可用，返回只读数据，不授予修改权，也不暴露业务特定的查询方法。这两条限制是一对的：给你一个通用的"最近前驱"，你就没有理由要求"上上一个"或"指定 id 的那个"，引擎也就不用维护一族谁都用不上两次的查询接口。依赖的登记跟着调用走：start 里每调一次 previous，之前登记的依赖就被替换成这一次的，引擎重跑 Context 时按最新一次的依赖图工作，不会累积出一份历史调用的旧账。
 
-渲染侧是一个 keyed React 组件，通过 `ChatNodeViewProps` 接收 Node 数据。类型参数把组件钉在一个 kind 上：`ChatNodeViewProps<'review-job'>` 的组件只服务 `review-job` 这一种 Node，审查卡片的实现无非是拿 `node.data.summary` 或 `title` 加 `completed` 拼一行文字渲染出来。
+## keyed renderer：React 组件的接入
 
-组件只消费 `node.data` 和受约束的 Location hook。它不直接接收 Session 事件、不扫描 Context 集合、不访问其他 Chat Node。
+渲染侧是一个 keyed React 组件，通过 `ChatNodeViewProps` 接收 Node 数据。类型参数把组件钉死在一个 kind 上：`ChatNodeViewProps<'review-job'>` 的组件只服务 review-job 这一种 Node。审查卡片的实现就是拿 `node.data` 里的标题、完成度、摘要拼一张卡，没有任何别的输入源。
 
-注册方式是在 client 插件的 `apply` 里，写法分三步：
+组件的消费面被刻意收窄：只消费 `node.data` 和受约束的 Location hook。它不接收 Session 事件、不扫描 Context 集合、不访问其他 Chat Node。这个收窄和 Definition 侧的性能不变量是同一堵墙的两面：引擎保证匹配是常数级，组件保证渲染不绕过引擎自己找数据，两边一起守住"事件量增长不拖慢界面"。
 
-1. 声明依赖：`export const inject = ['conversationEvents', 'slots']`。
-2. 在 `apply(ctx: ClientContext)` 里先调 `ctx.conversationEvents.register(reviewDefinition)`，把 Definition 注册进引擎。
-3. 再调 `ctx.slots.inject('conversation.chat.node', ...)`，注入回调里用 `ctx.slots.register({ name: 'conversation.chat.node', key: 'review-job' }, ReviewNodeView)` 把 keyed renderer 挂上插槽。
+注册分三步，写在 client 插件的 `apply` 里。先声明依赖，导出 `inject` 数组包含 `conversationEvents` 和 `slots`。再调 `ctx.conversationEvents.register(reviewDefinition)`，把 Definition 注册进引擎，kind 就是注册名，重复的 kind 会被注册表拒绝。最后调 `ctx.slots.inject('conversation.chat.node', ...)`，在注入回调里用带 key 的插槽注册把组件挂上，key 就用 `'review-job'`。
 
-Chat 数据类型通过声明合并注册：在 `declare module '@deepseek-ai/dsh-client-ui-conversation/client'` 里给 `interface ChatNodeDataMap` 加一条 `'review-job': ReviewChatData`。
+数据类型同样走声明合并：在 `declare module '@deepseek-ai/dsh-client-ui-conversation/client'` 里给 `ChatNodeDataMap` 加一条 `'review-job'` 对应你的渲染数据类型。这让每个 key 有精确的值类型，组件消费的数据形状和 Definition 产出不一致时，TypeScript 在编译期就报错，不用等运行期渲染出一张空卡。
 
-这给了每个 key 精确的值类型，TypeScript 会在编译时检查组件消费的数据形状和 Definition 产出的一致。
+三条摄入路径对 Node 身份的处理有一条共同结果值得点名：ChatNodeSeat 在同一个父列表里保持自己的 Context key，running 变 settled 不 remount。用户正在展开的折叠块、正 hover 的按钮，不会因为状态从"进行中"翻成"已完成"而闪一下重置。稳定性来自 key 只由 kind 加 id 派生，`conversationContextKey` 保证跨 kind 不碰撞，和渲染位置、和 seq、和可见性全部无关。
+
+视图层的快照构建器维护几个切片：排序、按 key 索引的 Node、位置索引、时间线。判断"这次变化是不是结构性的"有明确标准：出现新 key，或者 anchorSeq、可见性、Location 身份变化，才算结构变化；只是 data 变了就走值更新。这个标准把 React 的重渲染成本和业务语义对齐了，多数 progress 事件只改数据不动结构，界面做一次值更新就完，列表不重排、组件不重建。
+
+## 被拒绝的替代方案
+
+这套机制不是没考虑过更直的路。架构笔记里记录了一串被明确拒绝的做法，看懂拒绝理由比记住结论有用。
+
+最诱人的方案是让 Session 自己做集中折叠，提供一堆查询助手给业务用。被拒的理由是职责倒挂：业务怎么折叠是业务的事，折进核心意味着每加一种卡片都要动 Session，一个折叠 bug 污染所有卡片共用的核心路径。现在的分层里 Session 只管窗口和调度，折叠逻辑全在业务插件里，坏也只坏自己一家。
+
+第二条被拒的路是让 React 组件直接扫描事件窗口自己算。这在原型期最快，但渲染成本随窗口线性增长，且回放逻辑在每个组件里重写一遍，replace 和 prepend 的语义没人保证。等于把本篇开头"自己监听事件"的三个失败场景原样搬进渲染层。
+
+第三条是允许 matcher 读 Context。听起来无害，实际会引入路径依赖：replace 时 Context 状态和 append 时不同，matcher 一旦读 Context，同一个事件在不同路径下就匹配出不同结果，"相等窗口产出相等状态"这条核心不变量直接作废。match 只看当前事件，不是性能优化的选择，是正确性的选择。
+
+第四条是给引擎加通用的 end() 生命周期，让引擎理解"结束"。前面说过它被拒的理由：引擎多一个概念，所有 Definition 多一个要不要实现的选择，而绝大多数业务的"结束"只是 State 里一个标记，引擎根本不需要知道。类似的还有把 inbox 提成一级概念、给 reader 加业务特定的查询方法、允许组件直接读别的 Definition 的 State，拒绝逻辑同出一源：每一个都是往引擎里塞只有个别业务用得上的东西，塞进去的每一样都是所有业务要共同承担的复杂度。
 
 ## 验证清单
 
-写完一个 Conversation Node，需要验证这些结果：
+写完一个 Conversation Node，用这六条验证，每条对应一类真实故障：
 
-1. 完整窗口 replace 产生预期的最终 State、Location data、Node payload 和 anchorSeq。
-2. 只有 update 的尾部保持 pending；prepend 唯一的 start 后产生和完整 replace 相同的结果。
-3. 初始历史后 live append 产生和回放合并窗口相同的结果。
-4. prepend 更早页面添加更早的行，不替换数据未变的已有 keyed Node。
-5. 重复的可见 delta 保留 `context.key`，在请求时每帧最多发布一次。
-6. keyed renderer 只消费 `node.data` 和受约束的 Location hook，不扫描 Session 事件窗口、Context 或 Chat Node。
+1. 完整窗口 replace 产生预期的最终 State、Location data、Node payload 和 anchorSeq。这条验的是折叠逻辑本身。
+2. 只有 update 的尾部保持 pending；prepend 进唯一的 start 后，产出和完整 replace 完全一致。这条验的是分页复活。
+3. 初始历史后 live append，产出和把合并窗口整体回放一致。这条验的是 live 与历史同构。
+4. prepend 更早的页面只添加更早的行，不替换数据未变的已有 keyed Node。这条验的是身份稳定。
+5. 重复的可见 delta 保留 `context.key`，请求 cadence 下每帧最多发布一次。这条验的是合并与身份。
+6. keyed renderer 只消费 `node.data` 和受约束的 Location hook，不扫描事件窗口、Context 或 Chat Node。这条验的是消费面收窄。
 
-仓库里有现成的参考实现：`assistant.ts` 做流式和中断，`inbox.ts` 加 `message.ts` 做 predecessor 查询，`ui-deliverables` 做一个发布 Turn 数据但不创建自己 Node 的 Definition。
+仓库里有三个现成的参考实现，各代表一种形态。`assistant.ts` 做流式和中断，是 animation-frame 合并和 current 隐藏语义的出处。`inbox.ts` 加 `message.ts` 做前驱查询，是 reader.previous 的实战样本。`ui-deliverables` 是一个发布 Turn 数据但不创建自己 Node 的 Definition，示范 Location data 通道的独立用法。三条路径六条检查都过，你的 Node 在翻页、resync、乱序、live 四类场景下才有站得住的理由。
 
 ## 权衡与局限
 
-这套机制的前提是事件必须可回放。业务逻辑依赖 live-only 的内存状态，Definition 就会出错：所有 State 必须在按 seq 升序回放时确定性地重建。这是硬约束，不是建议。连带的一条是 start 之前不能渲染：窗口里只有 update 没有 start，Context 保持 pending；产品必须在 start 加载前渲染的话，需要一个 checkpoint 事件携带 whole fallback state。
+这套机制的第一条代价写在前提里：事件必须可回放。业务逻辑依赖 live-only 的内存状态，Definition 就会出错，所有 State 必须在按 seq 升序回放时确定性地重建。这不是建议，是硬约束，协议错误会在回放失败时直接抛出来。连带的一条是 start 之前不能渲染：窗口里只有 update 没有 start，Context 保持 pending，产品必须在 start 加载前就显示的话，需要一个携带完整 fallback 状态的 checkpoint 事件，纯增量没有绕路的办法。
 
-Node 之间也不共享状态。一个 Node 不能直接读另一个 Node 的 State，需要共享时用 Location data 发布到 Turn/Step 层，另一个 Node 通过 hook 消费。Definition 代码不能扫描全窗口，这是性能不变量，违反它会让 append 路径退化到 O(N) 而不是 O(D + 1)。当前教程的 target 固定为 'chat'，Trajectory 等其他视图目标是 out of scope。
+Node 之间不共享状态。一个 Node 不能直接读另一个 Node 的 State，需要共享时用 Location data 发布到 Turn 或 Step 层，消费方拿到的是只读快照。这个限制换来的是每个 Context 独立回放：任何一个 Definition 的重算不需要排序、不需要锁、不需要关心别的 Definition 在不在半路上。如果 Node 之间可以互读，一次 prepend 就得决定重算的拓扑顺序，机制复杂度直接上一个量级。
+
+引擎不理解"结束"。没有 end() 回调，终态是你 State 里的一个标记。想让卡片在结束后收起来、变灰、可折叠，全是渲染层读自己 State 的事，引擎帮不上也不需要帮。反过来，任何依赖"引擎知道这事完了"的设想(比如自动清理 Context)都不成立，Context 的生命由窗口决定，不由业务决定。
+
+当前教程的 target 固定为 chat。Trajectory 等其他视图目标是机制设计过的，但不在这一篇的范围内，共享定义跨 target 分支的做法在架构上被明确拒绝过，每个 target 有自己的贡献声明。
 
 ## 结论
 
-Conversation Node 的分工是：你声明事件身份、状态构建和渲染数据，引擎兜住回放、分页一致性和常数级性能。写 Definition 时守住两条就够了：事件族可回放，delta 按 seq 升序能确定性重建 State；append 路径不扫描全窗口。做到这两条，分页、乱序到达、live 追加都只是引擎要处理的情况，不是你要处理的。
+Conversation Node 的分工线划得很清楚：你声明事件身份、状态构建和渲染数据，引擎兜住回放、分页一致性、乱序归位和常数级性能。写 Definition 时守住两条就够了。事件族可回放：稳定业务 id，每个 `(kind, id)` 至多一个 start，delta 按 seq 升序能确定性重建，需要 start 前渲染就发带完整状态的 checkpoint。append 路径不扫描：累积进 State、共享走 Location、前驱用 reader.previous。做到这两条，翻页、resync、乱序到达、live 追加就都是引擎要处理的情况，不是你要处理的。
 
 ## 延伸阅读
 

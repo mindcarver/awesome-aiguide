@@ -1,139 +1,135 @@
 # 配置、凭证与存储：dsh 的有状态底座三件套
 
-> `dsh` 把用户配置、凭证、存储做成三个独立但同构的接缝，共同的原则是"引用和值分离、机制和策略分离、改了不用重启"。
-> 这一篇拆 `ctx.settings`（分层配置解析）、`ctx.credentials`（每次解析的凭证引用）、`ctx.storage` 加 `ctx.storageDomain`（hub 不做 IO 的键值存储），看一个 agent harness 怎么管理会话日志之外的有状态数据。
+> `dsh` 把用户配置、凭证、键值存储做成三个独立但同构的接缝，共同原则是引用和值分离、机制和策略分离、改了不用重启。消费者拿到的是名字和类型化入口，provider 持有介质和值，所以换后端、轮换凭证、改配置都不用惊动进程。
+> 每个子系统各有一条最值得记住的纪律：settings 的写入先过验证再落盘，注册期失败比运行期警告更严；credentials 每次操作都重新解析，绝不跨操作缓存，凭证轮换在下一次请求就生效；storage 的写入链把介质持久化排在内存变更之前，读取永远和介质一致。
 
 ## 为什么这三个放一起讲
 
-`dsh` 的会话事件日志有自己的独立子系统（persistence），不在这篇的范围。这篇讲的是会话日志之外的另外三类有状态数据：用户配置（settings）、凭证（credentials）、键值存储（storage）。
+`dsh` 的会话事件日志有自己的独立子系统，不在这篇的范围。这篇讲会话日志之外的三类有状态数据：用户配置（settings）、凭证（credentials）、键值存储（storage）。
 
-这三个看起来不相关，但共享同一套设计模式：
+三个领域看起来不相干，共享的却是同一套骨架。引用和值分离：配置项、凭证名、存储域名是引用，实际的值由 provider 持有，消费者拿着引用运行时才解析。机制和策略分离：接缝定义抽象接口，provider 实现具体介质（文件、环境变量、SQLite），消费者只声明需求。热更新：三个子系统都支持运行时修改立即生效。secret 感知：配置和凭证都区分 secret 字段，上 wire 就脱敏。
 
-- 引用和值分离。配置项、凭证名、存储域名是"引用"，实际的值由 provider 持有。消费者拿到的是引用，运行时才解析。
-- 机制和策略分离。接缝定义抽象接口（hub），provider 实现具体介质（文件、环境变量、SQLite），消费者只管声明需求。
-- 热更新。三个子系统都支持运行时修改后立即生效，不需要重启进程。
-- Secret 感知。配置和凭证都区分 secret 字段，wire 传输时脱敏。
+还有一道共用的护栏：`SettingsNamespace` 和 `CredentialRef` 都是 branded 类型，构造时就验证拼写（小写 kebab-case、shell 标识符语法），编译期就不让调用方把配置命名空间和凭证引用当普通字符串混着传。跨包跨进程传这些 id 时，brand 是 nominal 的，语义错配在类型层就被挡住。理解了这套共同骨架，三个子系统可以一次性看透。
 
-另有一道共用的护栏：`SettingsNamespace`、`CredentialRef` 都是 branded 类型，防止调用方把不同语义的字符串混在一起。理解了这套共同模式，三个子系统就能一次性看透。
+## ctx.settings：三层叠加，user 永远是补丁
 
-## ctx.settings：三层分层解析
+用户配置接缝的核心问题是一个配置值从哪来。答案是三层叠加：schema 默认值在最底，插件注册时声明的组合层 base 居中，用户层的 user section 最高。一个字段不在 user section 里，就继承 base 和默认值；出现在 user section 里，字段的存在本身就是"用户覆盖"的标记。`describe()` 返回的 descriptor 把 base 和 user 分开给，配置界面因此能标出哪些字段是用户改过的、哪些是继承来的，还能拿到一个单调递增的 revision，它是下次写入时做乐观并发的凭据。
 
-用户配置接缝的核心问题是：一个配置值从哪来？
+两条写入路径的分工值得分清。`update` 把一份稀疏 patch 合并进 user 层，永远不碰 base；`replace` 整段设置 user section，缺席的键回落到继承。`replace({})` 因此成为"重置"的实现：清空 user 层，所有字段回到继承态。合并式 patch 表达不了"移除"这个动作，整段替换才能。
 
-`dsh-settings` 的答案是三层叠加。一个注册了 namespace 的插件，其配置值按以下顺序解析：
+base 的所有权值得单独点明：它住在 `cordis.yml` 里，属于部署，不属于用户。一个 namespace 因此只携带用户可编辑的子集，用户的任何写入都动不了部署钉下的层。这个分层买到的东西很实际：运维可以放心地在组合层声明"这个部署的默认姿态"，不用担心被某次用户配置覆盖得无影无踪；想回部署默认，清掉 user 层就是。两层各自可预期，互不越界。
 
-```
-schema 默认值  →  组合层 base  →  用户层 user section
-```
+把一条配置的一生走一遍。插件注册 namespace，带 schema（含默认值）、组合层 base、validate、applies。用户在界面改一个字段：patch 合并进 user 层，schema 先验，validate 后验，都过了才落盘，revision 推进，`settings/updated` 出去（解析值没变就不发，`settings/document-updated` 照发携带新 revision）。owner 是 live 的话，watch 回调按提交顺序异步逐个到达，看到的是深冻结的新快照；owner 是 restart 的话什么都不会发生，界面挂一个待重启标记。用户想直接编辑文件，`prepareDocument()` 给出本地文档的绝对路径，文件型 provider 会顺手物化这份文档，非文件存储返回 undefined，界面据此决定给不给"打开文件"这个按钮。重置就是 `replace({})`，所有字段回到 base 和默认值的继承态。
 
-- schema 默认值：Schemastery schema 声明里写的 default，是最底层的兜底。
-- 组合层 base：插件注册时声明的组合层值，介于默认值和用户值之间。这是 `cordis.yml` 能影响但不完全控制的那一层。
-- 用户层 user section：用户通过 UI 或文件编辑写入的值，优先级最高。只更新这一层，永远不动 base。
+写入的并发语义也定了型。同一 namespace 的写入按调用顺序串行，并发的 `update` 各自合并到前一个已提交的 section 之上，不会互相覆盖成丢失更新。解析出的值是深冻结的快照，拿到手的人改不动。patch 里混进非 JSON 值，在有任何东西落盘之前就带着路径拒绝。带上 `expectedRevision` 写入而 revision 已经被人抢先推进，拒绝为 `SettingsConflictError`，调用方据此重读重试。这一组小纪律合起来，把"配置写入"从一个随便的读改写变成了一个有凭据、有顺序、有冲突信号的操作。
 
-一个字段如果不在 user section 里，就继承 base 和 schema 默认值；出现在 user section 里，就标记为"用户覆盖"。`describe()` 返回的 descriptor 会分离 `base` 和 `user` 两个层，让配置 UI 能标记哪些字段是用户改过的，哪些是继承来的。
+## 跨字段验证与注册期的严格性
 
-这里有一个很实际的 API 设计：`replace({})` 会清空 user section，让所有字段回到继承状态。这是配置"重置"的实现方式。
+schema 能做单字段验证（类型、范围、枚举），做不了跨字段验证。"选了 provider A，model 必须在 A 支持的列表里"这种约束，schema 表达不了。
 
-### 跨字段验证
+解法是注册选项里一个可选的 `validate` 函数，和组合层 `base`、生效时机 `applies` 并列。它在 schema 放行之后运行，看到的是已经含默认值和组合层的完整值，和 owner 将来读到的一模一样；抛异常就拒绝这次写入，而不是存一个会让 owner 停工的值。`dsh-llm-pi-ai` 用它拒绝无法服务的 provider 配置，错误发生在写入时。为什么不折进 schema？因为跨字段检查一旦折进去，schema 渲染出的表单和"缺席 section 怎么解析"两件事都会被牵连改变，分开是对的。
 
-schema 能做单字段验证（类型、范围、枚举），但做不了跨字段验证。比如"如果选了 provider A，model 必须在 A 支持的列表里"这种约束，schema 表达不了。
+时序上有两个不同的失败姿态。注册之后，一个通不过验证的存量 section 会让 namespace 保持上一个好值并告警，系统继续跑；注册那一刻没有"上一个好值"可退，所以通不过验证的存量 section 直接拒绝注册。同一个验证函数，注册期比运行期更严，因为运行期有退路而注册期没有。
 
-`dsh-settings` 的解法是注册选项里的可选 `validate` 函数，和声明组合层的 `base`、声明生效时机的 `applies` 并列，在 schema 放行之后运行。它看到的是已经过 schema 校验的完整值，含默认值和组合层，和 owner 将来读到的一样。如果它抛异常，那次写入被拒绝，而不是存一个会让 owner 停工的值。`dsh-llm-pi-ai` 用这个机制拒绝一个它无法服务的 provider 配置，在写入时就报错。
+## applies、两个事件与不变量
 
-### applies：什么时候生效
+每个 namespace 声明 `applies`：`live` 或 `restart`，默认 `live`。`live` 的 owner 通过 `watch()` 观察变化，值变即生效；`restart` 的 owner 构造时读一次，从不 watch，界面据此给变更挂上"待重启生效"的标记。
 
-每个 namespace 声明一个 `applies` 字段：`'live'` 或 `'restart'`。
+要紧的是认清 `applies` 是 UI 提示不是机制。一个声明了 `restart` 的 owner 偷偷去 watch，没有任何东西拦它，纪律靠的是 owner 守约。机制和约定的分界在这类系统里反复出现，这里是一条明确的约定线。
 
-- `live`：值变化立即生效，owner 通过 `watch()` 观察变化。提交的变更发 `settings/updated` 事件，解析值没变（deep-equal）就不发。
-- `restart`：值变化需要重启才生效，owner 只在构造时读一次，从不 watch。
+事件有两个，管的事不同。`settings/updated` 在新值成为权威之后发，解析值没变（deep-equal）就不发，避免无意义的抖动；它的 source 区分 `update`（用户写入）和 `provider`（提供方发布），消费者因此能分清"用户改的"和"部署改的"。`settings/document-updated` 只要原始 section 变了就发，不管解析值等不等，携带着 revision，配置界面用它检测自己手里的 revision 是不是陈旧了。一个管"有效值变了"，一个管"文件动了"，分开是对的：把后者并进前者，UI 会漏掉所有"文件动了但值没变"的刷新；把前者并进后者，watch 回调会被无效写入打得乱抖。
 
-注意 `applies` 是一个 UI 提示，不是机制。一个 `restart` owner 只是不调用 `watch()`，所以它的值在构造时读一次就固定了。配置 UI 可以据此标记"待重启生效"的 pending change。
+监听器失败的语义有个精巧的例外。同步抛出或异步拒绝的监听器只会被隔离并记日志，不拖累别人；但带 `INVARIANT` 码的失败会在所有监听器跑完之后重新抛出，而这个重抛只可能来自同步监听器。推论被文档写死：不变量检查不许写成 async 函数，否则违规既拦不住也传不出去。
 
-### Secret 脱敏
+## secret 脱敏与 path op
 
-`describe({ redactSecrets: true })` 是每个 wire 传输面必须调用的。它从 value、base、user 三层里剥掉 `role('secret')` 字段，只留下位置信息（path + set slot）。这样配置 UI 能渲染 write-only 输入框，永远不接收 secret 值。
+`describe({ redactSecrets: true })` 是每个 wire 传输面必须调用的。它从 value、base、user 三层剥掉 `role('secret')` 字段，只留下位置信息（path 加 set 槽位），页面据此渲染 write-only 输入框，从头到尾不接收 secret 值。同进程的本地 UI 才有拿到明文默认值的通道，那是进程内信任，不是 wire 语义。
 
-但这带来一个问题：拿着脱敏 descriptor 的调用方无法安全重建 section（它没见过 secret 字段）。所以删除操作走 path op（`{ op: 'unset', path: [...] }`），不走 `replace`。如果脱敏方用 `replace` 重建 section，会悄悄删掉它从没收到过的 secret 字段。path op 让调用方能点名它要改的字段，不需要重述整个 section。
+脱敏引出一个必须直面的不对称：拿着脱敏 descriptor 的调用方无法安全重建 section，它没见过 secret 字段。所以删除走 path op（`{ op: 'unset', path: [...] }`）而不是 `replace`。一个脱敏方如果用 `replace` 重建 section，会悄悄删掉 wire 从没还给它过的每个 secret 字段。path op 让调用方点名要改的字段，不重述整个 section。这条纪律的适用范围超出 settings：任何"读出来的是投影、写回去想当全量"的接口，都有同一个坑。
 
-## ctx.credentials：引用和值分离，每次解析
+## ctx.credentials：引用、四层来源、每次解析
 
-凭证子系统解决的是"怎么把 secret 从配置里赶出去"。
+凭证子系统解决的是怎么把 secret 从配置里赶出去。做法：配置项和 `cordis.yml` 条目里只放引用，引用是一个 POSIX 风格的环境变量名，branded 类型挡住和普通字符串的混用。消费者每次需要凭证时 `resolve(ref)` 拿值和来源层，没配置就是 `undefined`。
 
-做法很直接：配置项和 `cordis.yml` 条目里只放引用（环境变量名），provider 拥有实际值。消费者每次需要凭证时，调用 `resolve(ref)` 拿值。`CredentialRef` 是一个 branded 类型，底层是 POSIX 风格的环境变量名，brand 防止调用方把凭证引用和普通字符串混在一起。
+本地 provider 的值可以从四层来：进程环境 `env`、provider 自己管的 `file` 存储、项目级 `.env`（`project-env`）、用户级 `.env`（`user-env`）。四层的存在让"项目里放一把测试 key、用户目录放一把真 key"成为普通的配置问题，不是代码问题。
 
-### 每次解析：热更新的机制
+最关键的设计决策是消费者每次操作都重新解析，绝不跨操作缓存。LLM 适配器每次模型请求 resolve 一次，轮换过的 API key 在下一次请求就生效，不用重启。这和"启动时读一次缓存到进程死"的传统做法方向相反，能成立是因为 resolve 是读一次环境变量或文件的轻操作，不是重计算。代价是每次请求多一次 resolve 调用，极高吞吐下才需要看一眼，回报是凭证轮换零延迟生效，以及"进程里不存在一份可能过期的 secret 副本"这个更干净的属性。
 
-这是凭证子系统最关键的设计决策：**消费者每次操作都重新解析，绝不跨操作缓存**。LLM 适配器每次模型请求都 resolve 一次，所以轮换过的 API key 会在下一次请求就生效，不需要重启。
+resolve 的返回里还带着来源层的名字。这个信息平时无用，排障时是真金：用户报告"换了 key 没生效"，第一件事就是看当前值来自哪一层。答案是 env，说明进程环境里有一把遮蔽的旧 key，改用户层的存储不会有用；答案是 user-env，说明 `.env` 文件还没被重新加载。来源层把"值是多少"和"值从哪来"一起交付，让"为什么是这个值"变成一个可回答的问题，而不是一场翻遍四层的考古。
 
-这和传统配置系统"启动时读一次，缓存到内存"的做法完全相反。为什么能做到？因为 resolve 是一个轻量操作（读环境变量或文件），不是重计算。代价是每次请求多一次 resolve 调用，回报是凭证轮换的零延迟生效。
+## 空值、只读源、只为 badge 的事件
 
-### 空值即不存在
+一条贯穿所有 provider 的规则：空的存储值在任何地方都等于不存在。resolve 跳过空值，describe 把空值报告为未配置，`set` 直接拒绝空值并指路给 `unset`。这防的是一个空白字符串冒充已配置的 secret，让"配了但配了个寂寞"这种最难查的状态从词汇表里消失。
 
-一条贯穿所有 provider 的规则：**空的存储值在任何地方都等于不存在。**
+`describe(ref)` 返回的信息只有三件事：是否已配置、当前由哪层供值、能不能写。永远不返回值本身。`writable: false` 有个具体场景：引用的值来自进程环境变量时，本地 provider 报只读，因为写入会"看起来成功"而解析继续返回被环境变量遮蔽的值，不如一开始就拒绝，让界面渲染成只读。这是把静默的数据遮蔽问题翻成了显式的 API 事实。
 
-`resolve` 跳过空值，`describe` 把空值报告为未配置。这防止了一个空白字符串冒充"已配置的 secret"。
+移除的幂等性和记录那边一致：unset 一个不存在的引用是 no-op，不报错不发明假状态。清理脚本可以放心地重复跑，"已经删过了"在任何一层都不是错误。
 
-### describe 不暴露值
+事件方面，`credentials/reference-updated` 只在 provider 管理的源变化时发（set、unset、存储里观测到的外部编辑），进程环境变量的变化不发，因为进程环境不可观测。有意思的是消费者根本不需要这个事件，它们每次都重新解析；事件存在的唯一理由是让配置界面刷新"已配置"的徽标。一个为 UI 而生、为正确性而不需要的事件，存在感很诚实。
 
-`describe(ref)` 返回的 `CredentialInfo` 只回答三件事：这个引用是否已配置、从哪个层来的、能不能写入，永远不返回值本身。
+## 记录空间：为令牌刷新而生
 
-`writable: false` 有一个具体场景：本地 provider 发现一个引用由当前进程环境变量提供时，报告 `writable: false`。因为写入会"看起来成功"但 resolve 继续返回被环境变量遮蔽的值，不如一开始就拒绝，让 UI 渲染成只读。
+凭证子系统里还有第二套键空间，容易被忽略但 solves 一个真问题。引用回答"这个配置项用哪个环境变量"，记录（record）回答"这个插件为这个 id 持有什么凭证"。记录的存在本身就是全部事实，值是黑盒。
 
-### 事件：只为 provider 管理的源触发
+记录的写路径只有一条：`modifyRecord`，一个串行化的读改写，带跨进程互斥。这个形状是为 OAuth 令牌刷新定制的，值得把时间线摆出来看。两个并发请求同时发现令牌过期：没有互斥的世界里，两者各自向授权服务器换新令牌、各自写回，后写的赢，先写的那枚新令牌立刻作废，而下一次刷新用的 refresh token 可能已经被消耗，链条断在半空。有互斥的世界里，第一个调用方进入读改写，第二个在门外等；第一个写完，第二个读到新令牌直接用，全程只有一次刷新。`authorization/settled` 事件为每个终态发一次，失败也发，刷新的失败和成功一样是可观测的事实，监控不用从"没有成功事件"里反推失败。并发到达的第二个授权调用被拒绝而不是被合并，拒绝携带明确的码，调用方决定重试还是放弃。
 
-`credentials/updated` 事件在 provider 管理的源发生变更时触发（set、unset、外部编辑）。进程环境变量的变化不触发，因为进程环境不可观测。
+两套键空间的事件也分开（`reference-updated` 和 `record-updated`），因为两套键的语法不相交，一个事件混载两种键只会逼消费者猜。记录没有 schema 发现路径，所以有 `listRecords()`；引用没有枚举，因为没有场景需要"列出所有可能的环境变量名"。移除一个不存在的引用或不存在的记录都是 no-op，删除幂等，不制造假错误。
 
-有意思的是，消费者其实不需要这个事件（它们每次都重新解析）。这个事件存在的唯一理由是让配置 UI 刷新"已配置"的 badge。
+## ctx.storage：hub 不做 IO，facet 不装懂
 
-## ctx.storage + ctx.storageDomain：hub 不做 IO
+存储子系统持久化"会话事件日志之外的一切"，三个角色严格分工。hub（`ctx.storage`）是一个汇合点不是存储，自己不做任何 IO；`ctx.storage.backend` 是名字到 backend 的表，多个 backend 并排挂。backend 拥有一种介质，json 后端每个 unit 原子重写一份人类可读文件，sqlite 后端一个文档一行适合频繁更新。data form（`ctx.storageDomain`）是消费者唯一使用的入口，和 `ctx.storage.domain` 是同一个对象。
 
-存储子系统持久化"除了会话事件日志之外的一切"。它拆成三个角色，严格遵循能力接缝模式。
+backend 的能力声明用 facet 表达：backend 能服务哪种数据形态，就实现哪个 facet，服务不了就干脆不实现。解析时发现缺这个 facet，大声失败。当前唯一的 facet 是 `kv`。"不装懂"比"都答应但行为存疑"好，这个原则在沙箱强制力那里见过一次，这里又出现：能力是报告出来的事实，不是许愿。
 
-- Hub（`ctx.storage`）：一个汇合点，不是存储。`ctx.storage.backend` 是一个 name 到 backend 的表，多个 backend 并排挂载。hub 自己不做任何 IO，backend 拥有介质，data form 拥有语义。
-- Backend：拥有一种介质（文件树根、数据库文件），暴露可选的操作组，当前唯一的操作组是 `kv`（键值）。两个实现：`json`（每个 unit 一个人类可读文件，原子重写）和 `sqlite`（一个文档一行，适合频繁更新）。
-- Data form（`ctx.storageDomain`）：typed API，消费者唯一使用的入口。它通过声明合并挂载到 hub 上，`ctx.storage.domain` 和 `ctx.storageDomain` 是同一个对象。
+两个生命周期细节把装配期的不确定性也管住了。backend 插件发布一个仅用于生命周期的 service key，form 的 provider 注入它，保证 form 的激活不会跑赢 backend 的注册。form 本身通过声明合并挂载，还没挂上就去取会抛 `form-not-mounted`，装配的职责是排序插件而不是悄悄延后。这类"启动竞态"在插件系统里是常见病，这里用的是显式依赖加大声失败，不是重试。
 
-### Domain：声明一次的 spec
+backend 之间还有一层制度性的对齐：一份共享的合同测试套件，逐条检查 backend 契约的每个条款，json 和 sqlite 都要过同一套。这层投入解决的是多介质接缝的老毛病：两个实现各自理解契约，分歧藏在"谁能通过的用例集"的差异里，消费者换个路由就踩中。合同套件把契约从文档变成可执行的判据，新介质（比如将来的远程存储）想进门，先过同一套题。facet 可选的制度意义也在这里：能力的有无是结构事实（实现没写就是没有），不是运行时的自我报告。
 
-一个 domain 由它的拥有包声明为一个 spec 对象（`DomainSpec`），一次声明就是 domain 身份、布局和记录 schema 的唯一来源。`name` 必须匹配 `UNIT_NAME_RE`，同时当后端单元名用（既是安全的文件名，也是 SQL 标识符段）；`version` 是格式版本，介质上盖了不同版本会在 open 时拒绝；`global` 是可选的全局单例 slot；`tables` 是表声明。schema 用 zod 写，`z.infer` 让消费者类型不用重复。
+## Domain：一次声明，加载期钉死
 
-`defineDomain(spec)` 在模块加载时就钉死 spec 的字面量类型。任何违规（名字不合法、version 不是非负整数、global schema 接受 null）在模块加载时抛异常，在任何介质被触碰之前。null 是介质的"从未写入"哨兵，所以一个能存 null 的 global schema 会让存取不对称。
+一个 domain 由拥有它的包声明为一个 spec 对象，一次声明就是身份、布局和记录 schema 的唯一来源。`name` 必须匹配 `UNIT_NAME_RE`，同一个字符串既当安全的文件名又当 SQL 标识符段，介质上不会因为命名遇到注入或转义问题；记录的键是任意字符串，永远到不了文件路径。`version` 是格式版本。`global` 是可选的全局单例槽。表用 zod 声明，`z.infer` 让消费者类型不用重复写。
 
-### 写入链：先持久，再改内存，再发事件
+`defineDomain(spec)` 在模块加载时就钉死 spec 的字面量类型，任何违规在加载期抛异常，在任何介质被触碰之前：名字不合法、version 不是非负整数、global schema 接受 null。最后这条的理由很硬：null 是介质上"从未写入"的哨兵，一个能存 null 的 global schema 会让"存了 null"和"从来没写过"不可区分，存取直接不对称。把错误从运行期提前到加载期，是这一层最划算的一笔投资：坏 spec 挂不上进程，而不是挂上之后在某个深夜的写入里炸。
 
-每次写入（put、delete、update、global.set）排在 domain 的写入链上，执行顺序严格固定：
+## 写入链、读取真相、返回值不是副本
 
-```
-排入写入链  →  backend 持久化  →  改内存  →  发 domain/changed 事件
-```
+每次写入（put、delete、update、global.set）排在 domain 的写入链上，顺序严格固定：backend 先持久化，然后改内存，然后发 `domain/changed`。backend 写失败，内存不动，读取永远不和介质不一致；读取从权威的内存状态同步返回，不等 IO。`update(key, fn)` 是写入链上一个原子槽位的读改写；键不存在拒绝 `missing-key`，不做"当它存在"的宽容。删除一个不存在的键返回 false，不产生写入也不发事件，和凭证删除的幂等姿态一致。
 
-**backend 持久化在内存变更之前。** 如果 backend 写入失败，内存不变，读取永远不会和介质不一致。读取是从权威的内存状态同步返回的，不需要等 IO。
+读取端有两个容易踩的细节。迭代器在写入落地的过程中保持稳定快照，遍历不会被并发的写打断，也不保证看到打断期间的新值。`get` 返回的是存储对象本身不是副本，想改就走 `put` 或 `update`，原地改内存里的返回值不会写回介质，改了也白改。这两个细节一个管并发读的确定性，一个管"改了为什么没存上"这类工单。
 
-`domain/changed` 事件在 backend 确认持久化之后才发出。所以一个抛异常的监听器只是被 contain 和 log，不会拒绝一个已经持久的写入。这个事件是通知，不是事务参与者。
+global 槽的语义有个温和的默认：`get()` 在第一次 `set` 之前返回 spec 里声明的 `initial`，介质上此刻什么都没有；第一次 set 才把这个槽实体化到介质上。声明里的默认值不需要预先落盘，也就不会污染一份"全是默认值"的存储。
 
-### 路由是 domain 插件的配置
+还有一个反向的诚实：unit 不串行化并发写，排序属于调用方。单次调用本身原子且持久，但同一个 unit 上两个并发写谁先谁后，backend 不表态。这和 settings 的"写入按调用顺序串行"形成对照：那边消费者是人手速级的 UI 操作，串行便宜；这边消费者可能是高吞吐的管线，把排序留给拥有上下文的调用方。
 
-哪个 backend 服务哪个 domain，是 domain 插件的路由表决定的，不是 hub 全局选择。路由写在插件 config 里：顶层 `backend` 键设默认路由（示例里是 `sqlite`），`routes` 下是 domain 到 backend 的映射，示例把 `my-fast-domain` 指到 `sqlite`、把 `my-readable-domain` 指到 `json`。这让"频繁更新的数据走 SQLite，需要人类可读的数据走 JSON"这种混合策略成为配置，不需要代码。
+## domain/changed 是通知不是事务
 
-### 没有迁移
+`domain/changed` 严格在 backend 确认持久化之后发出，一个写入一个事件，顺序等于写入链顺序。载荷是个封闭的 operation 联合：`put`（插入、覆盖、global 写入）只带新快照，从不带旧值；`deleted` 是一个没有值的墓碑。想 diff 的消费者自己留上一份快照，事件不替你背历史。
 
-当前是 pre-release 姿态：一个盖了不同 version 的介质拒绝 `version-mismatch`，一个无法解析的介质拒绝 `malformed-medium`。没有迁移路径。这是明确的早期取舍。
+它的身份是通知不是事务参与者：发出时提交点已过，一个同步抛异常的监听器只会被隔离并记日志，不可能拒绝一个已经持久的写入。这个定位和 settings 的 `settings/updated` 一致，事件在持久化之后，权重就只能是告知。想让监听器参与决策的冲动每隔一阵就会出现一次，答案始终是把决策挪到写入之前。
+
+关闭序列把生命周期收干净：拒绝新写入，排空队列中已接受的写入（它们的事件照发），释放 unit，最后释放域名。幂等，重复调用等拆除完成一起返回。域名要在拆除彻底完成后才 freed，`already-open` 同时覆盖"还开着"和"还在关"，不存在半开半关的可乘窗口。backend 侧的 `close()` 语义是排空所有打开 unit 上的在飞写入再释放介质，同样幂等，并发重复调用等拆除结束一起结算。通常由调用方在 effect 销毁器里调 close，忘了调的，facility 会在卸载时替它关掉。销毁器路径上的 watch 回调也有配套规则：销毁器返回后，排队的回调被跳过，已经开始的会结算完，服务销毁等它结束。
+
+## 路由是配置，迁移不存在
+
+哪个 backend 服务哪个 domain，由 domain 插件的路由表决定，不是 hub 全局选择。配置里顶层 `backend` 设默认路由，`routes` 按 domain 名覆盖。"频繁更新的数据走 SQLite、需要人类可读的数据走 JSON"这种混合策略是两行配置，不是代码。打开一个 domain 的失败序列也是定死的：`already-open`、`backend-not-found`、`facet-unsupported`、然后是 backend 层的 `version-mismatch` 和 `malformed-medium` 原样透传，最后是 `invalid-record` 带着出错的表和键。每一步失败都有名字，调用方按码路由。
+
+用一个具体场景看路由怎么落。部署声明两个 domain：`my-fast-domain` 存每轮对话的指标，写入频繁；`my-readable-domain` 存用户手工可查的引用数据，看重可读性。配置写两行：默认 `backend: sqlite`，`routes` 里把 `my-readable-domain` 指到 `json`。两个 domain 在同一个进程里并排打开，各走各的介质，代码一行不用改。哪天想把指标换成远程存储，注册一个新 backend、改一行路由，domain 的 spec 和消费者的代码原样不动。这就是"路由是 domain 插件的配置"的兑现方式：介质选择是部署姿态，不是代码结构。
+
+domain 打开之后的句柄也有两个小而稳的属性：`table(name)` 重复调用返回同一个实例，句柄可以放心存起来复用；`get(name)` 是一个无类型的诊断入口，给调试和工具用，正常消费者走类型化的 `ctx.storageDomain`。两条规定合起来，把"日常路径全类型、逃生路径明码标价"这个接口设计习惯又落了一次。
+
+迁移当前不存在。盖了不同 version 的介质拒绝打开，解析不了的介质拒绝打开，这是明说的 pre-release 姿态：格式还会变，变了就手动处理旧数据，不提供半吊子的自动迁移。早期这是合理的诚实，等格式稳定，这里会是这套子系统最显眼的待办。
 
 ## 权衡与局限
 
-三个子系统都把"改了不用重启"当默认，软肋也同源：一部分约束靠约定而不是机制，观测各有各的边界。
+三个子系统都把"改了不用重启"当默认，软肋也同源：一部分约束靠约定，观测各有边界。
 
-settings 的 `applies: 'restart'` 没有强制力，只是 UI 提示。一个 restart owner 如果偷偷 watch 了，不会有机制阻止它。
+settings 的 `applies: 'restart'` 没有强制力，owner 偷偷 watch 没人拦。`INVARIANT` 只能来自同步监听器，这条约束同样是约定。凭证不观测进程环境变量，改了环境变量 UI 徽标不刷新，好在消费者下次解析自然拿到新值，坏的只是显示。存储没有迁移，事件只在进程内：两个进程共享同一个 SQLite 文件，一个进程的写入不会通知另一个，跨进程变更推送是记录在案的限制。credentials 每次解析有性能代价，极高吞吐下值得量一量。
 
-credentials 不观测进程环境变量。改了环境变量但没走 provider 的 set/unset，`credentials/updated` 不发；消费者下次解析照样拿到新值（因为每次都 resolve），但 UI 的 badge 不会刷新。
-
-storage 没有迁移，版本不匹配直接拒绝，pre-release 阶段 schema 变了就得手动处理旧数据。`domain/changed` 也只在进程内：两个进程共享同一个 SQLite 文件时，一个进程的写入不会通知另一个。
-
-credentials 的每次解析有性能代价，每次模型请求多一次 resolve 调用。多数场景可忽略，极高吞吐下值得注意。
+这些边界有个共同形状：机制保证的都是单进程内的一致性和可恢复性，跨进程的协调（存储通知、环境观测、授权互斥除外）一律明说不做。单进程是 agent harness 的默认拓扑，为不存在的拓扑预付复杂度不划算，但多进程部署的人需要先知道这些线画在哪。
 
 ## 结论
 
-settings、credentials、storage 是三个同构的接缝：引用和值分离，机制和策略分离，secret 在 API 层面就被脱敏或隔离，改了不用重启。消费者拿到的是引用和类型化入口，provider 持有介质和值，所以换后端、轮换凭证、改配置都不用惊动进程。会话日志之外的有状态数据，就由这三件套收拢。
+settings、credentials、storage 是三个同构的接缝：引用和值分离，机制和策略分离，secret 在 API 层就被脱敏或隔离，改了不用重启。它们的纪律可以各记一句：settings 的写入先验证再落盘，注册期比运行期严，因为没有退路；credentials 每次操作重新解析，进程里不存 secret 副本，记录空间用串行互斥保住令牌刷新；storage 的介质持久化排在内存变更之前，事件在持久化之后只做通知，facet 不装懂，加载期钉死坏 spec。会话日志之外的有状态数据，就由这三件套收拢，而它们共同的软肋（跨进程、约定型约束）也都写在明处。
 
 ## 延伸阅读
 
