@@ -1,90 +1,102 @@
 # dsh 的 Web 搜索抓取与 Skills 技能系统
 
-> `ctx.web` 和 `ctx.skills` 是两个共享同一设计哲学的能力接缝，都把多个 provider 合并成一张模型面向的稳定表面，换 provider 不改模型怎么问，模型面向的名字、schema、展示全集中在单个 consumer 里。
-> `ctx.web` 把搜索和抓取合成一个能力、按调用时选 provider；`ctx.skills` 把多来源技能按层合并、按需加载正文，连模型可见的技能目录都是动态注入的会话历史。
+> `ctx.web` 和 `ctx.skills` 是同一个架构主题的两次应用：多个 provider 合并成一张模型面向的稳定表面。web 把搜索和抓取放进一个能力、按调用时选 provider，换搜索引擎不改模型怎么问；skills 把多来源技能按层合并、按需重读正文，连模型可见的技能目录都是动态注入的会话历史。模型面向的名字、schema、提示、展示全部集中在单个 consumer 包里，provider 注册的是能力，不是工具。
 
 ## 两个接缝，一个主题
 
-这篇把 web 和 skills 放一起讲，不是因为它们功能相近（一个联网、一个管指令），而是因为它们共享同一个架构主题：**多 provider，一张模型表面**。
+把 web 和技能放一篇讲，不是因为功能相近（一个联网、一个管指令），而是因为它们面对同一个问题：接多个来源时，怎么不让来源差异泄漏到模型那一层。
 
-很多系统接多个搜索引擎、多个技能来源时，会把每个 provider 的差异泄漏到模型那一层，于是模型得知道"我在用 Exa 还是 Perplexity"，技能目录也跟着来源变。`dsh` 的做法相反：provider 注册的是能力，模型面向的名字、schema、提示引导、展示全部集中在一个 consumer 包里。换搜索 provider，模型怎么问不变；换技能来源，模型看到的目录格式不变。
+反例很好想象：每个搜索引擎 provider 自己注册一个工具，模型得学会 Exa 的参数和 Perplexity 的参数，部署换一个搜索后端，模型的工具表跟着变。技能也一样，目录格式如果跟着来源变，模型每换一个技能源就要重新认识一遍目录。
 
-下面分别拆。
+`dsh` 的做法是把"能力"和"表面"分开。provider 注册的是能力（一个搜索实现、一个技能来源），模型面向的名字、schema、提示引导、展示渲染全部集中在一个 consumer 包里。换 provider 是部署方的配置动作，模型的合同一个字不变。两个接缝往下读会看到同一组手法：执行时解析、与顺序无关的选择、封闭的结果词表、consumer 独占展示。
 
-## Web 接缝：`ctx.web`
+## Web 接缝：搜索与抓取合在一个能力里
 
-`ctx.web` 的服务类型是 `WebRuntime`，定义在 `packages/web/web`。它是一个可选能力，不在 agent-loop 主干里。它在一个接缝上放两个操作：搜索（search）和抓取（fetch）。
+### 为什么是一个能力不是两个
 
-### 为什么一个能力有两个操作
+搜索和抓取不共享请求 schema，也不共享业务逻辑，一个进查询一个进 URL。但它们被刻意放进同一个 `ctx.web` 中间层，因为共享的东西更根本：一个 provider 选择策略的 owner、一套取消和错误词汇、一个面向产品的"这个 harness 怎么联网"的配置 API。拆成两个接缝，这套机制要原样复制两遍。
 
-搜索和抓取不共享请求 schema，也不共享业务逻辑。但它们被故意做成同一个 `ctx.web` 中间层，因为它们共享：一个 provider 选择策略 owner、一套 abort/error 词汇、一个面向产品的"这个 harness 怎么联网"配置 API。
+代价是服务上有成对的 `searchX` 和 `fetchX` 方法。文档明说这种平行是故意的，不是漏了抽象：硬抽成一个泛型方法，会把两个本来不同的东西拧在一起。请求形状和 provider 逻辑保持分离，只有共享的服务是产品触网的边界。
 
-代价是服务上有成对的 `searchX`/`fetchX` 方法。文档明确说：这种平行是故意的，不是漏了抽象。硬把它们抽成一个泛型方法，反而会把两个本不同的东西拧巴到一起。
-
-provider 注册的是能力（一个 `WebSearchProvider` 或 `WebFetchProvider`），不是工具。模型面向的 `web_search`/`web_fetch` 工具名、schema、提示、展示，全在单个 `dsh-tool-web` consumer 里。当前搜索 provider 有 exa、perplexity、deepseek 三个，抓取 provider 有 `web-fetch-http`。
+包的拓扑是标准三件套：接口包持有服务和词汇，只依赖 Cordis 和底层支持；provider 包（exa、perplexity、deepseek 三个搜索，`web-fetch-http` 一个抓取）各自持有凭证、端点和 wire 映射；consumer 包独占模型面向的一切，从不 import 任何 provider。注册形状镜像了 LLM 运行时：按 id 存 Map、重复注册抛错、返回随 fiber 销毁的 disposer，插件卸载时注册自动撤销，不留悬挂的引用。
 
 ### 搜索：query 进，引用出
 
-接缝请求只带一个 `query`。模型面向的 `web_search` 工具接受一个必填的 `queries` 数组，consumer 把它扇出成多个单 query 的接缝请求，单元素数组就是一次搜索。`maxResults` 是 consumer 拥有的上限（`dsh-tool-web` 的 `searchMaxResults` 配置，默认 `8`），穿过接缝，在回来的路上强制：如果 provider 多返回了，接缝截断 `sources[]` 并置 `truncated`。
+接缝的搜索请求只带一个 `query`，外加一个可选的 `maxResults`。模型面向的 `web_search` 工具接受一个必填的 `queries` 数组，consumer 把它扇出成多个单查询的接缝请求，单元素数组就是一次搜索。
 
-搜索结果是 `WebSearchResult`，三个字段：`content` 是可选字符串，放 provider 生成的答案或摘要；`sources` 是 `readonly WebSearchSource[]`，可引用来源，已截断到 `maxResults`；`truncated` 是布尔，接缝为守 `maxResults` 砍了来源时为 `true`。
+`maxResults` 的归属有讲究：它不是模型面向的参数。模型不能自己决定要多少条，上限由 consumer 的插件配置持有，默认 8。这个数一路穿到 provider，有原生条数控制的 provider（Exa 的 `numResults`）在请求层就用上它，省成本省延迟；不管 provider 做没做，接缝在回来的路上强制截断来源数组并置 `truncated` 标志。上限因此是一个跨 provider 的单一保证，不是各家自觉。
 
-Exa 和 DeepSeek 不返回 `content`，Perplexity 返回生成的答案。`WebSearchSource` 里只有 `url` 必填，`title`、`snippet`、`publishedAt` 都可选，因为不是每个 provider 都返回它们。文档有句话很到位：强迫适配器编造这些字段，会让接缝撒谎（Perplexity 的引用可能只有 URL）。`dsh-tool-web` 渲染时用 `title ?? hostname(url)` 兜底。
+结果是三样东西：`content` 是可选字符串，放 provider 生成的答案（Perplexity 有，Exa 和 DeepSeek 没有）；`sources` 是已截断到上限的来源数组；`truncated` 是接缝砍没砍过来源的布尔。来源里只有 `url` 必填，标题、摘要、发布时间都可选。这条设计对抗的是一种常见的脏活：适配器为了让字段整齐，给没有标题的引用编一个标题。文档的原话是，强迫适配器编造这些字段会让接缝撒谎。渲染兜底归 consumer：没有标题就显示 hostname。
+
+provider 专属的控制也刻意没收：新鲜度过滤、域名过滤、搜索深度，都没有进 schema。规则是只有能以 provider 中立的语义、被工具 schema 和被选中的 provider 同时诚实兑现的控制才加进来，否则每个开关都会变成某家的方言。
+
+`content` 的有无对模型体验有实际影响，值得点破：Perplexity 走生成答案路线，模型拿到的是一段带引用的成文回答；Exa 和 DeepSeek 走原始来源路线，模型拿到的是引用列表，综合归纳的活在模型自己肩上。两种形态在同一个接缝里合法共存，靠的就是 `content` 可选这一条，而不是分成两个结果类型。
 
 ### 抓取：URL 进，资源出
 
-`WebFetchRequest` 就一个 `url`。它故意省略 timeout、format、prompt、extraction 这些控制：取消是直接执行参数，展示和更高层的 LLM 关注点不属于安全抓取。
+抓取请求就一个 `url`。它故意不带超时、格式、prompt、抽取这些控制：取消是直接执行参数，不占 schema；prompt 会把抓取变成 LLM 摘要，把抓取耦合到模型 provider 上，Claude Code 的 `url + prompt` 形状就是被这条否掉的；Firecrawl 式的内容抽取被留给未来一个独立的抽取能力，绝不偷偷塞进 fetch。
 
-一个反常识的点：**HTTP 状态是抓取到的资源状态的一部分，不自动算失败**。一个成功的网络抓取拿到 `404` 或 `500`，返回的是一个带状态码和有界解码 body 的 `WebFetchResult`，不是错误。`url` 是允许重定向后的最终 URL。`WebError` 留给"没法安全抓取或表示资源"的失败。
+结果里 `url` 是允许重定向之后的最终地址，`statusCode` 是数字，`body` 是一个封闭判别联合，只有 `html` 和 `text` 两种，各带一段字符串内容。词表封闭加消费者穷举分支，意味着未来加第三种（比如确定性本地解码的 `pdf`）是一次跨已知包的协调变更，漏处理会在编译期爆出来，而不是运行期渲染出一个未知种类。
 
-body 是个封闭判别联合（`html` 或 `text`），由 `dsh-web` 拥有：provider 解码 kind，`dsh-tool-web` 渲染。加一个新 kind 是跨已知包的协调变更，不是插件扩展，消费者用 `default: assertNever(...)` 收尾，加了不处理就编译失败。这和 stream 契约、LSP 操作的封闭联合是同一套路。
+### 状态码不是失败
 
-### provider 可用性：本地检查，不打网络
+这是抓取契约里最反直觉、也最值得内化的一条：HTTP 状态是抓到的资源状态的一部分，不自动算失败。
 
-一个 provider 的 `available()` 是个廉价的本地检查（凭证在不在、配置能不能解析），绝不打网络。它是执行时选择的输入，不是健康系统。`search()`/`fetch()` 读它来挑一个能用的 provider，选不出来就抛结构化的 `WebError`。
+一次成功的网络抓取拿到 404 或 500，返回的是一个带状态码和有界解码 body 的结果，不是错误。为什么这样分？因为"抓取这个动作成功了"和"这个资源的状态是 404"是两个正交的事实。404 页面本身是有信息量的内容，把它折叠成错误，调用方就丢了 body；而 DNS 解析失败、连接被拒、TLS 错误这些"没法安全抓取或表示资源"的失败，才走 `WebError`。错误词汇留给传输层的事故，资源的事故留在结果里。
 
-### 选择：调用时解析，与顺序无关
+### provider 怎么选
 
-选择在调用时解析，永远不依赖注册、配置或 HMR 顺序：
+每个 provider 有一个 `available()` 方法，它是个廉价的本地检查：凭证在不在、配置能不能解析。它被明确禁止打网络，这条禁令背后的区分值得记住：可用性检查是选择的输入，不是健康系统。选择要在毫秒级发生在每次调用里，打网络的检查会把每次工具调用变成一次探测；而真正的健康问题（端点挂了、配额没了）本来就会以执行失败的形式浮出来，轮不到选择阶段预判。
 
-- 配置了 id 且注册且可用 → 那个 provider。
-- 配置了 id 但没注册 → `WEB_PROVIDER_CONFIGURED_MISSING`。
-- 配置了 id 注册了但不可用 → `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`。
-- 没配 id，恰好一个可用 → 那个。
-- 没配 id，多个可用 → `WEB_PROVIDER_AMBIGUOUS`（不是先到先得）。
-- 没配 id，没有可用 → `WEB_PROVIDER_UNAVAILABLE`。
+选择在每次调用时解析，永远不依赖注册、配置或热重载的顺序。设计笔记里有一句说得很硬：注册顺序不是产品策略。规则表是闭合的六行：配了 id 且注册且可用就用它；配了 id 没注册，报配置指向的 provider 不存在；配了 id 注册了但不可用，报配置的 provider 不可用；没配 id 恰好一个可用，自动选它（为测试、演示和简单部署留的便利）；没配 id 一个可用的都没有，报不可用；没配 id 多个可用，报歧义。
 
-注意"多个可用且没配 id"是 `AMBIGUOUS` 而不是 first-wins。这是个明确选择：歧义要大声报错，不能默默挑一个，否则行为不可预测。
+最后一条是刻意和"先到先得"作对。多个 provider 都能用而部署没表态时，挑任何一个都是赌博，行为随安装顺序漂移。歧义大声报错，逼部署方在配置里写明。配置可以走字段也可以走环境变量，两者完全等价，环境变量只是配置的另一个入口，不是一条藏在后面的优先级链。
 
-### 错误：开放的 code
+还有一个和工具注册有关的决定：`web_search` 和 `web_fetch` 在产品启用时注册（两个开关默认开），绝不在后端状态上注册。provider 缺失、配错、歧义、凭证未配，都不注销工具，解析推迟到执行时。理由是后端可用性是执行时的事，不是 schema 注册的事；工具表稳定，热重载时序、加载顺序、凭证状态就都进不了模型合同。接缝也刻意没有观察面：没有注册变更事件、没有状态查询，调用方执行然后接住抛出的错误。
 
-`WebError` 的 `code` 是个开放字符串，不是封闭联合（和 `LlmError`、`SubagentError` 一样）。一个 provider 可以抛自己的 code，不用改 `dsh-web`，消费者必须容忍未知 code。
+### 错误：开放 code，按拥有者分
 
-code 按拥有者分。接缝中立的 code 由共享的 `WebRuntime` 契约抛：`WEB_PROVIDER_UNAVAILABLE`、`WEB_PROVIDER_CONFIGURED_MISSING`、`WEB_PROVIDER_CONFIGURED_UNAVAILABLE`、`WEB_PROVIDER_AMBIGUOUS`、`WEB_DUPLICATE_PROVIDER`（注册时编程错误，类比 `DUPLICATE_ADAPTER`）、`WEB_ABORTED`、`WEB_PROVIDER_ERROR`（provider 自己失败经接缝抛出的兜底，含网络/传输失败如 DNS、连接拒绝、TLS）。抓取传输的 code 由 `web-fetch-http` 实现拥有，别的抓取后端不必抛它们：`WEB_INVALID_URL`、`WEB_BLOCKED_URL`、`WEB_REDIRECT_BLOCKED`、`WEB_FETCH_TOO_LARGE`、`WEB_FETCH_TIMEOUT`、`WEB_UNSUPPORTED_CONTENT_TYPE`。
+`WebError` 的 `code` 是开放字符串，不是封闭联合，和 LLM、子 agent 的错误一样。provider 可以抛自己的 code 而不动接口包，代价是消费者必须容忍未知 code。
 
-### 抓取安全
+code 按拥有者分层。接缝中立的七个由共享的运行时契约抛：四个 provider 选择错误、重复注册的编程错误、取消、以及一个兜底的 provider 自身失败（DNS、连接拒绝、TLS 这些网络传输事故都折在这里，没有单独的网络 code，描述进 message）。抓取传输的六个由 `web-fetch-http` 实现拥有，别的抓取后端不必抛：无效 URL、被挡的 URL、被挡的重定向、太大、超时、不支持的 content type。想知道"这错是谁的责任"，看 code 属于哪层就知道。
 
-本地抓取后端只接受 HTTP(S)，拒绝凭证，对重定向、字节、字符、时间都设上限，对每个同源重定向跳重新校验，然后解码 body。展示归工具。
+### 抓取安全的边界
 
-一个重要的安全提示：本地后端不拦截私网目标。所以别在能触达敏感内部服务的环境里开 `web_fetch`。这是把"抓取能力"和"网络安全策略"分开的后果：接缝只管安全抓取，不管你的网络拓扑里哪些是禁区。
+本地抓取后端的安全姿态是一组硬限制：只收 HTTP(S)，拒绝带凭证的 URL，重定向跳数、字节、字符、时间都有上限，每一跳同源重定向都重新校验，请求带一个显式的产品用户代理，让对方服务知道是谁在敲门。跨源重定向直接挡掉并报错，要求一次新的调用，这和 Claude Code 的抓取是同一个模型：第一次抓取拿到重定向目标，调用方自己决定要不要跟。
 
-## Skills 接缝：`ctx.skills`
+一条必须大声说的局限：本地后端不拦私网目标。设计笔记的原话是，在 SSRF 拦截落地之前，`web_fetch` 是一个 SSRF 原语，不能在能触达敏感内部网络的部署里开启。这不是偷懒，是诚实的划界：正确的拦截需要 DNS 解析后再校验（防重绑定和 TOCTOU）、逐跳重验、IPv6 处理，没有现成参考实现可抄，值得一次独立的设计。在那之前，网络安全策略归部署方，接缝只管安全抓取。
 
-`ctx.skills` 的服务类型是 `SkillRegistry`，定义在 `packages/skill/skill`。技能是可选的指令，不是会话事件。它的家族有四个包：Service Definition（`dsh-skill`）、本地 provider（`dsh-skill-filesystem`）、可选的打包徽章 provider（`dsh-skill-badge`）、Consumer（`dsh-tool-skill`）。
+### 被拒掉的方案
+
+设计笔记里否掉的路线同样有信息量，每条都指向同一个判据：差异不许上浮到模型那一层。
+
+每个 provider 自己注册工具被否。那样 provider 就拥有了模型面向的名字，不同搜索后端会注册出不同（甚至重复）的工具名，模型被迫学习后端细节，正是这套设计要消灭的东西。
+
+在 consumer 里做派发也被否。工具层自己选 provider、管凭证、做映射，等于把 provider 差异烤进工具 schema，选择策略从单 owner 变成散落各处。
+
+先注册者赢被否，注册顺序不是产品策略，这条前面说过。
+
+抽取当抓取被否。Firecrawl、Exa、Tavily 的抽取返回的不是 HTTP 资源而是加工后的内容，塞进 fetch 会污染"URL 进资源出"的契约，它属于未来的独立抽取能力。
+
+Claude Code 的 `url` 加 `prompt` 形状被否，因为它把抓取和模型摘要绑死，抓取从此依赖一个 LLM provider 才能工作。
+
+三个 provider 的字段映射可以顺手看一眼，体会一下"方言吸收"落在实处是什么样子：Exa 的第一条 highlight 变摘要，没有 highlight 就没有摘要，不编；Perplexity 的回答文本来自消息内容，来源优先用结构化列表，退到只有 URL 的引用数组也能用。每个映射都守住同一条线：provider 没给的字段就缺席，不造假。
+
+consumer 自身的纪律也写进了契约：它进入接缝的唯一路径是那两个方法，不许调 provider 的 `available()`、不许枚举 provider，这样选择策略才真正只有一个 owner。它持有 HTML 到文本的转换、截断的格式化、调用和结果的展示卡片，请求带上执行的取消信号，让取消、超时、销毁能一路传到网络请求上。模型一次发多个查询的扇出也发生在它这里，拆成多个单查询的接缝请求并行发出。
+
+## Skills 接缝：分层注册表加按需正文
 
 ### 分层注册表
 
-`ctx.skills` 是个 host 加 per-scope 的分层注册表，沿用了工具注册表在 `dsh-scope` 上建立的形状。一条注册落在它调用上下文 scope 的层里：host 行和仓库插件落进全局层，一个被 agent preset 挂载的插件落进那个 preset 的层。一次读把全局层和观察 scope 的链合并：最近的层对一个重名技能直接赢，rank 顺序只在同一层内决定重名。
+`ctx.skills` 是一个 host 加 per-scope 的分层注册表，形状沿用工具注册表在 scope 上的那套。一条注册落在它调用上下文的 scope 层里：宿主行和仓库级插件进全局层，一个被 agent preset 挂载的插件进那个 preset 的层。一次读把全局层和观察 scope 的链合并，重名时最近的层直接赢，rank 只在同一层内部裁决重名。
 
-这个分层是"scoped agent registration"主题的应用：同一个进程里两个 agent 可以用不同的技能集，因为它们各自的 scope 链不同。重命名一个 scope（比如空白会话重组）对下一次读可见，不需要注册表变更。
+这个分层让同一个进程里的两个 agent 能各用各的技能集，因为它们的 scope 链不同。发现缓存按解析后的 scope 链为键，所以 scope 重组（比如空白会话重挂）在下一次读就可见，不需要改注册表。层内的重名裁决顺序是 rank、provider 顺序、本地顺序，摘要按名字排序。
 
-provider 注册是同步的（在 `apply()` 里），远程初始化和发现放在 await 的 `list()` 里。`SkillProvider` 有 `name`、`list(options)`（返回候选数组或显式 observation）、`get(candidate, options)`（加载完整技能正文）。
+provider 注册是同步的，远程初始化和发现放进 `list()` 里 await。`list` 可以返回一个完整数组，也可以返回一个带 `complete` 标志的观察：候选照给，但声明"这次发现不权威"。这处理了远程技能源暂时连不上的情况：已知的候选还能用，但结果不缓存，下一次读重新发现。进行中的发现如果 provider 代数变了（注册被换过），重试一次，再变就把最新候选拿着、标记不完整、不缓存。被拒的 `list` 记日志并从观察里省略，坏候选项快速失败。
 
-`SkillProviderObservation` 让一个 provider 暴露"还能直接加载的候选"，同时报告"这次发现不是权威的"（`complete: false`）。这处理了远程技能源暂时连不上的情况：还能用已知的候选，但不缓存。
+### 本地发现与监听
 
-### 本地发现优先级
-
-本地 provider 按 rank 顺序扫根：
+本地 provider 按 rank 扫六个根，低 rank 赢：
 
 | Rank | 来源 | 根 |
 |---|---|---|
@@ -95,71 +107,63 @@ provider 注册是同步的（在 `apply()` 里），远程初始化和发现放
 | 500 | user-agents | `<agentsHome>/skills` |
 | 600 | bundled | `Config.bundledSkillDir` |
 
-项目根是最近的含 `.git` 的祖先目录；没有就用当前 cwd。当 `ctx.fs` 可用时，git 根的遍历通过文件系统服务探测 `.git`，这样远程或沙箱工作区不会退回到宿主文件系统边界。这条和前面 fs 接缝的"共享执行世界"是连着的：技能发现也跟着执行世界走。
+项目根是最近的含 `.git` 的祖先目录，没有就用 cwd。走 git 根时通过文件系统服务探测 `.git`，所以远程或沙箱工作区不会错误地摸到宿主的文件系统边界，技能发现跟着执行世界走。技能名是 kebab-case，接受目录 bundle（`<name>/SKILL.md`）和扁平 Markdown（`<name>.md`）两种形态，不支持递归的 `**/SKILL.md` 发现，一个目录树里塞多深就发现不到多深。
 
-技能名是 kebab-case，本地 provider 接受目录 bundle（`<name>/SKILL.md`）和扁平 Markdown（`<name>.md`）。不支持嵌套递归的 `**/SKILL.md` 发现。
+文件监听用 Chokidar 看已存在的根：目录 bundle 的增删、技能条目的直接变更会触发目录失效，bundle 下面的资源文件不算目录变更。还不存在的根从最近的存在祖先开始，一段路径一段路径地跟。监听器自己失败时降级为不完整观察，但直接加载照常工作，模型写文件触发的目录相关观察会同步失效，宿主监听覆盖 IDE、Git、shell 和外部进程的改动。
 
-### 调用策略：两个独立开关
+表上还有一个可选的打包徽章 provider：它注册一个不可变的 bundled 候选，把打包进发行的资产通过资源基址暴露出来。出厂 CLI 声明它为禁用，要用得显式打开，这是个"能力存在但不默认打扰"的姿态。
 
-`SkillInvocationPolicy` 把两个独立的调用控制归一成正布尔。
+注册表还收运行时注册：代码直接塞一个技能进某一层。同名时先到者赢，后来的记一条警告、拿到一个空操作的反注册器；层内的优先级是项目高于运行时高于用户。注册返回一个 Cordis effect 的反注册器，销毁时连带失效缓存。这些细节合起来是一个意思：注册表对所有来源一视同仁，来源只影响优先级，不影响待遇。
 
-`modelInvocable` 决定模型面向的目录和加载器是否包含这个技能，`userInvocable` 决定人类命令目录和加载器是否包含。
+资源基址有三种形态：目录路径、URL、不透明描述。前两种好理解，第三种是给"资源存在但说不清在哪"的 provider 留的诚实出口，比如一个远程技能源只能告诉你"附加材料在服务端"。调用方拿它做展示或按需解析，注册表不解释。
 
-`ctx.skills.list()` 保留全部四种组合：纯模型技能、纯用户技能、两者都行、两者都不（只能通过受信任的 `ctx.skills.get()` 调用方访问）。本地 provider 读 frontmatter 的 `disable-model-invocation` 和 `user-invocable` 键，省略的默认 `true`，把每个解析出的技能投影成这个归一策略。
+### 两个调用开关
 
-### 三种形态：摘要、候选、完整定义
+调用策略把"谁能调"归一成两个布尔：`modelInvocable` 决定模型面向的目录和加载器含不含这个技能，`userInvocable` 决定人类命令的目录和加载器含不含。frontmatter 里两个键映射过来，省略默认都允许，全关的技能只剩受信任的 `ctx.skills.get()` 调用方能碰。`list()` 保留全部四种组合，不在读取时替任何人做合并决定。
 
-- `SkillSummary`：注册表的调用中立摘要。模型会话目录只用 `name` 和 `description`，永远不用正文或绝对路径。
-- `SkillCandidate`：provider 到注册表的形状，带 `rank`（低 rank 赢重名）、`locator`（不透明的 provider 句柄，注册表只存着还回去）、可选 `path`/`metadata`。
-- `SkillDefinition`：`ctx.skills.get()` 返回的完整解析结果，带 `content`（markdown 正文）、可选 `path`/`metadata`/`resourceBase`。
+### 三种形态与不缓存的正文
 
-一个关键设计：完整定义不被注册表缓存。每次 `get()` 都用选中的候选调赢的 provider，本地 provider 会重读当前正文。这意味着技能正文改了，下次调用立刻生效，不用刷新缓存。代价是每次加载都要读；回报是永远拿到最新正文。
+注册表里有三种形状，对应三个阶段。摘要是调用中立的目录行：名字、描述、可选的使用时机，模型会话目录只用名字和描述，永远不碰正文和绝对路径。候选是 provider 交给注册表的形状，带 rank 和一个不透明的 locator，注册表只把它存着还回去，附带可选的路径和元数据。完整定义是 `get()` 返回的解析结果，带 markdown 正文。
 
-### 会话目录：动态注入的会话历史
+关键决定：完整定义不被注册表缓存。每次 `get()` 都用赢的候选调对应 provider，本地 provider 每次重读当前正文。技能文件一改，下一次调用立刻拿到新的，不需要任何缓存失效动作。代价是每次加载都付一次读盘；回报是"正文永远是新的"这个性质不依赖任何失效机制的正确性。名字不再匹配候选的定义会被拒，并顺带失效那个 provider 的缓存。
 
-这是 skills 最有意思的部分。`dsh-tool-skill` 在一个活会话首次观察到非空完整视图时，在第一个 `agent/pre-step` 注入一条持久的 user 角色 `<system-reminder>`。目录里只有排序后的 `name` 和 XML 转义的 `description`，不含正文、路径、来源、provider、路由提示。
+查找和读取的入参也各有归属。查找选项带一个可选的 `cwd`（选择哪个工作区的技能）和一个取消信号；视图选项再加一个 scope 键，注册表用它选层，provider 只从同一个对象里读查找契约，看不到层的概念。取消的检查做在目录选择的前后，缓存命中也查；发现和加载跟取消信号赛跑，谁先到听谁的。目录侧的缓存有界：只有完整完成的目录才进缓存，条目数有配置上限，按 cwd 和 provider 组合计数。用户级根目录里有个系统子目录被刻意跳过，它放的是 harness 自己的东西，不进用户的技能目录。
 
-每个后续模型步之前，consumer 算出 `<available_skills>` 标签之间渲染条目的 digest。digest 变了，就通过 `agent.inject()` 追加一条持久的全量替换；删光所有技能就追加一条显式的空替换。不完整的快照保留上一次好的模型视图。这些目录消息是会话历史，不是 World State。
+### 会话目录：注入的会话历史
 
-`skill({ name })` 工具：校验 kebab-case 名字，在调用中立目录里找摘要，除非 `isModelInvocable` 允许否则加载前就拒绝，然后为调用方 cwd 重读完整定义，返回前再查一次策略，返回带 `<skill_content>`、`<skill_resources>`、`<skill_instructions>` 的工具结果。
+模型怎么知道有哪些技能？consumer 在一个活会话第一次观察到非空的完整目录时，在第一个 agent 步之前注入一条持久的 user 角色 `<system-reminder>`，内容是 `<available_skills>` 标签包裹的、按名排序的名字加 XML 转义描述。目录里没有正文、没有路径、没有来源和 provider、没有路由提示。描述有个渲染上限，默认 500 字符。排序加转义不只是为了好看：目录内容的字节顺序稳定，未变化的目录在重复渲染时逐字节一致，提示前缀的稳定性才能保住，provider 的前缀缓存才有意义。
 
-一个优雅的细节：只改正文不改目录的编辑，会改变后续工具调用，但不产生目录消息，也不改写之前的工具结果。因为正文不缓存，每次 `get()` 重读，正文一改下次调用就拿到新的；而目录消息只在 name/description 变化时才发。这把"技能可用性变化"和"技能正文变化"分成了两个不同频率的通知。
+此后每个模型步之前，consumer 先套用当前精确的工具可见性，对完整快照里渲染出的条目算一次 digest，基线是插件能认出的最新一条可见目录消息：变了就追加一条持久的全量替换，技能删光就追加一条显式的空替换，从来没有过目录且视图为空就什么都不发，不完整的快照保留上一次好的视图。压缩把历史目录消息都藏掉也没关系，下一次完整快照会重新建立它。摘要上那个可选的使用时机字段是给调用方做筛选提示的元数据，来源标签也是给人看的描述信息，两者都不参与优先级裁决：谁赢只由层和 rank 决定。
 
-`skills/change` 事件是个不带 diff 的未过滤失效通知：消费者用自己的查找选项重新拉目录。监听器失败被隔离，不能否决注册表变更。
+这套机制把两个频率不同的通知分开了。技能的增删改名会变 digest，产生目录消息；只改正文不产生目录消息，但因为正文不缓存，下一次工具调用自然拿到新正文，之前的工具结果也不被改写。目录消息是会话历史不是 World State，这个定位决定了它的生命周期跟着会话走，跟着压缩波动，靠快照自愈。
 
-## 真实代码落点
-
-- `packages/web/web/src/types.ts`、`index.ts`：`WebRuntime`、搜索/抓取类型、选择规则。
-- `packages/web/web-search-exa`、`web-search-perplexity`、`web-search-deepseek`：三个搜索 provider。
-- `packages/web/web-fetch-http`：抓取 provider，拥有抓取传输错误码。
-- `packages/web/tool-web`：`web_search`/`web_fetch` 工具 consumer。
-- `packages/skill/skill/src/index.ts`：`SkillRegistry`，分层合并。
-- `packages/skill/skill-filesystem`：本地 provider，rank 扫描、Chokidar 监听。
-- `packages/skill/tool-skill`：`skill` 工具 consumer，会话目录注入。
+`skill({ name })` 工具的流程收在这里：校验 kebab-case 名字，在调用中立目录里找摘要，策略不允许模型调就在加载前拒绝，为调用方的 cwd 重读完整定义，返回前再查一次策略，最后交回带正文、资源说明和使用指令的工具结果。资源基址按需解析引用的脚本和资产，结果不枚举技能目录。解析不到的技能按"未知或已不可用"报告。`skills/change` 事件是一个不带 diff 的失效通知，消费者拿自己的查找选项重新拉快照，监听器失败被隔离，不能否决注册表的变更。
 
 ## 权衡与局限
 
-web 的两个操作平行方法是代价。不抽成泛型是为了不拧巴，但 API 表面上确实有成对方法。这是用 API 对称换语义清晰。
+web 的成对方法是一个看得见的税。搜索和抓取各自一组方法，API 表面更宽；换来的是两个语义不同的操作不被拧进一个泛型签名。
 
-web 多 provider 没配 id 是 AMBIGUOUS 不是 first-wins。这要求部署方显式配 provider，否则报错。对懒人是个小麻烦，但对行为可预测是必要的。
+歧义报错对懒人不友好。多 provider 可用而没配置时直接抛错，部署必须显式表态。这换来的是行为不随安装顺序漂移，一条配置就能解释每次调用走的谁。
 
-web_fetch 不拦私网。安全长在部署方配网络安全策略，不在接缝。这是能力边界的清晰划分，但意味着开 web_fetch 前要评估网络可达性。
+`web_fetch` 不拦私网，SSRF 拦截是推迟项不是已完成项。开它之前先回答"这个部署能触达哪些内部服务"，答案里有敏感目标就别开。推迟清单上还有几件：一个 pdf 的正文臂（HTTP 200 加本地确定性解码，不是 provider 侧抽取）、独立的抽取能力、和权限策略的集成。每件都标了为什么不顺手做：要么没有可抄的正确实现，要么一顺手就会把两个能力拧在一起。
 
-skills 完整定义不缓存，每次重读。正文永远最新，但高频加载有读开销。对绝大多数场景可接受。
+技能正文每次重读。对绝大多数场景读盘开销可忽略，高频加载大量技能的场景会感到成本；换来的"永远最新"不依赖失效机制，少一整类缓存 bug。
 
-skills 目录是会话历史不是 World State。压缩可能藏掉历史目录消息，下次完整快照会重建。这意味着技能目录在超长会话里有重建成本。
+web 侧还挂着两个开放的问号，说明这层设计没把自己假装成定稿：provider 配置错误要不要在启动时就当致命错误处理（现在是执行时报），以及 web 的权限策略应该住在哪一层。答案出来之前，这两件事都留给部署方自己掂量。
+
+目录是会话历史。超长会话里压缩会藏掉旧目录消息，靠下一次完整快照重建，目录在长会话里有重建成本；remote provider 断连时目录退到上次好的视图，可能短暂落后于真实状态。这两个代价都来自同一个取舍：目录被放在模型看得见的地方（会话历史），而不是运行时私有的状态里，模型因此能像看见系统提示一样看见技能的存在。
 
 ## 结论
 
-`ctx.web` 把搜索和抓取合成一个能力，按调用时选 provider，HTTP 状态是资源状态不是失败，错误 code 开放、按拥有者分。`ctx.skills` 是分层注册表，按层合并多来源技能，按需重读正文，会话目录是动态注入的会话历史。两个接缝是同一个主题的两次应用：多 provider 合并成一张模型面向的稳定表面，换 provider 不改模型怎么问，模型面向的名字、schema、展示全集中在单个 consumer。"接哪个搜索引擎""技能从哪来"因此成为部署方的配置选择，对模型完全透明。
+两个接缝共享一套骨架：provider 注册能力，consumer 独占模型面向的表面，选择在执行时解析且与顺序无关，结果词表封闭，错误 code 开放但按拥有者分层。web 侧最重要的一条纪律是事实不折叠：HTTP 状态是资源状态的一部分，404 是带 body 的结果；上限是跨 provider 的单一保证，provider 做没做接缝都兜底。skills 侧最重要的是两个频率的分离：目录消息跟着名字和描述走，正文新鲜度跟着每次重读走。"接哪个搜索引擎""技能从哪来"是部署方的配置选择，对模型完全透明，这是这两个接缝要兑现的全部承诺。
 
 ## 延伸阅读
 
-- [Web Access 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/web.md)：本文主要依据之一，含搜索/抓取契约与选择规则
-- [Skills 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)：本文另一主要依据，含分层注册表与会话目录
-- [Web capability seam 笔记](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md)：web 接缝的设计
+- [Web Access 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/web.md)：搜索与抓取契约、选择规则、错误分层
+- [Skills 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)：分层注册表、调用策略、会话目录
+- [Web capability seam 笔记](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md)：接缝设计、被拒方案、SSRF 决策
 - [Capability Seams](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/capability-seams.md)：`ctx.web`、`ctx.skills` 行
-- [Scoped Agent Registration](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/12-scoped-agent-registration.md)：skills 分层注册表的 scope 基础
+- [Scoped Agent Registration](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/12-scoped-agent-registration.md)：分层注册表的 scope 基础
 
 上一篇：[dsh 的 Jobs 与 Workflow：后台任务和编排脚本](./24-jobs-and-workflow-ralph.md)
 下一篇：[上下文预算：dsh 的 Compaction 压缩与 Spill 溢出](./26-context-budget-compaction-and-spill.md)

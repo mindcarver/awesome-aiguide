@@ -1,164 +1,170 @@
 # dsh 的 Jobs 与 Workflow：后台任务和编排脚本
 
-> `dsh` 把"长跑的活"分成两个不同层次，`ctx.jobs` 是通用的后台任务注册表（管身份、归属、生命周期，bash 和子 agent 都注册在这里），`ctx.workflowEngine` 是建在上面的编排脚本引擎（模型写一段脚本，用编程逻辑扇出多个子 agent）。
-> 两者共享一个纪律：失败永远走结果字段而非异常，活的生命周期边界比自身更底层，归属授权靠 owner 不靠 id 保密。
+> `dsh` 把"长跑的活"分成两层：`ctx.jobs` 是通用的后台任务注册表，管身份、归属、读取、取消、等待，bash 后台进程和子 agent 都注册在这里；`ctx.workflowEngine` 是建在上面的编排脚本引擎，让模型写一段脚本、用编程逻辑扇出多个子 agent。两层共享一套纪律：失败永远走结果字段而非异常，取消永远有界，归属授权靠 owner 校验而不靠 id 保密。Ralph 是这条栈顶上的一个普通插件：固定脚本、全新子 agent、结构化交接，agent-loop 里没有为它加任何模式。
 
-## 为什么是两个不同的东西
+## 两类长活，两种接缝
 
-agent 干活时，经常有两类"不是一步就能做完"的活：
+agent 干活时经常遇到两类"不是一步能做完"的活，需求完全不同。
 
-- 后台长跑任务：起一个 `npm run dev`、跑一个长时间构建、起一个子 agent 委派任务。这些活需要一个统一的身份、归属、读取、取消、等待机制。
-- 带逻辑的多 agent 编排：根据中间结果决定下一步、并行起多个子 agent、流水线式地传递数据。这种需要一个能跑编排逻辑的引擎。
+一类是后台长跑：起一个 dev server、跑一个长构建、派一个子 agent 去委派任务。这些活要的是生命周期管理，谁起的、谁能读、怎么停、什么时候算完。另一类是带逻辑的编排：审一批文件、做一个迁移、对结论做对抗性验证，需要根据中间结果决定下一步、并行扇出、流水线传递。这要的是执行逻辑，循环、分支、汇合。
 
-很多人会把它们揉成一个"任务系统"。`dsh` 拆成两个接缝，因为它们要的东西不同。后台任务要的是生命周期管理（谁起的、能不能读、怎么停、什么时候算完）；编排脚本要的是执行逻辑（循环、并行、流水线、按结果分支）。
+很多系统会把它们揉成一个"任务系统"，结果是两边都别扭：用编排引擎跑 dev server 是杀鸡用牛刀，用任务队列表达"根据第 3 步结果决定第 4 步"是一场字符串编程。`dsh` 拆成两个接缝，而且两层不是平行的：编排脚本里扇出的每个子 agent，本身也是注册在 `ctx.jobs` 上的后台任务。workflow 负责"怎么编排"，jobs 负责"每个活的生老病死"，一层叠一层。
 
-有意思的是，这两个层次不是平行的：编排脚本里扇出的子 agent，本身也是注册在 `ctx.jobs` 上的后台任务。也就是说，workflow 用 jobs 做底层的任务生命周期，自己在上面加编排逻辑。
+拆分的收益在设计笔记里说得很直白：如果每个能力自己实现生命周期，隔离、清理、通知、提示词行为会各自重复一遍，模型还得为每种生产者学一套不同的收集和停止协议。统一注册表让模型只学一套。
 
-## 后台任务注册表：`ctx.jobs`
+## 后台任务注册表
 
-`ctx.jobs` 的服务类型是 `JobRegistry`，定义在 `packages/jobs/jobs`。它管的是"一个长跑的活从起到终"的全部生命周期。
+### 身份与归属：授权不靠猜
 
-### 身份与归属
+`ctx.jobs` 里的每个活有一个 `JobId`，格式是 `<kind>-N`，比如 `bash-3`、`subagent-1`。kind 来自一个可合并扩展的表，当前有 `bash` 和 `subagent` 两个，注册表把每个 kind 当成不透明的 id 命名空间。
 
-`JobId` 是个 branded id，格式是 `<kind>-N`（比如 `bash-3`、`subagent-1`）。job kind 来自一个可合并扩展的 map，当前有两个：`bash` 和 `subagent`。注册表把每个 kind 当成不透明的 id 命名空间。
+注意 id 是顺序可预测的。这是一个明确的安全立场：访问边界建立在授权上，不建立在不可猜测上。id 保持可读是为了对话记录里能认出它，它也从不用来派生文件系统路径。真正的大门是 owner 校验：有主的任务只有精确的拥有会话能碰，比对的是会话 id；清理和完成通知的投递用的是精确的 `Agent` 实例身份，所以重用一个 agent 或会话 id，无法把旧作用域的清理和通知劫走。
 
-这里有一个关键的安全判断：**访问控制靠 owner 授权，不靠 id 保密**。id 是可预测的（`bash-3` 谁都能猜到），所以安全边界不能建立在"别人猜不到 id"上，而要建立在"这个 job 归哪个 owner、调用方是不是那个 owner"上。授权比的是 owner 的 session id。
+### 生产者契约：preflight 之后没有可失败步骤
 
-### 生产者契约：谁拥有什么
+生产者启动一个活时给运行时一份 `JobStart`：声明 kind、一行面向模型的 label、可选的输出字节上限、可选的 owner，加一个 `run()` 函数。运行时把所有可能失败的准入工作（访问校验、并发容量、清理登记）全部做在调 `run()` 之前；`run()` 被调一次，同步返回三个钩子；从这之后，注册提交，不再有可失败的步骤。如果 `run()` 抛了，什么都没注册过，生产者自己收拾半启动的资源。
 
-这是 jobs 设计的核心切分。`JobStart` 声明身份、label、可选的输出上限、owner，加一个 starter。运行时在调 `run()` 之前完成 preflight（访问校验、清理登记），调完之后提交，之后没有可失败的步骤。
+这个 preflight 和 commit 的切分保证了一件事：生产者不会启动一个拿不到可收集 job id 的活。所有权也随之划清：生产者拥有执行资源（那个进程、那个子 agent 运行），运行时拥有身份、访问和生命周期状态。bash 适配一个 shell 进程，子 agent 适配一次子运行，它们只提供执行细节，不碰注册表的账本。
 
-切分是：**生产者拥有执行资源，运行时拥有身份、访问、生命周期状态。** 起一个 bash 后台进程，进程本身归 bash 执行器（生产者）管，但这个 job 的 id、谁能读它、它现在是 running 还是 completed，归 jobs 运行时管。
+三个钩子里 `cancel` 必须同步、幂等，最终让 `done` 结算。`readOutput` 可选，有它的是流式活，每次调用返回自上次以来的增量，每个活一条消费游标；没有它的是"只给最终输出"的活。
 
-`JobHooks` 是运行时控制和观察生产者工作的钩子，三条：
+`done` 的语义值得单独记住：它在生产者释放完资源之后才 resolve，不是在工作完成时。一个活可能活干完了但还在清理，此时 `done` 还挂着。它不许 reject，运行时会把 rejection 转成 `failed`。如果取消流程自己抛了，运行时有权强制把账本记成失败并警告"工作可能成了孤儿"，而不是永远等下去。
 
-- `cancel(reason?)` 请求终止，必须同步、幂等、最终结算 `done`。
-- `done` 是一个 Promise，在生产者释放资源之后 resolve，不只是工作完成；不许 reject，运行时把 rejection 转成 `failed`。
-- `readOutput?` 可选，消费自上次以来的输出增量。没有这个的是"只给最终输出"的 job，有这个的是流式 job，每个 job 一个消费游标。
+### 结算：first-wins 与通知的次序
 
-`done` 的语义值得单说：它 resolve 的时机是"资源释放完"，不是"工作做完"。一个 job 可能工作做完了但还在清理资源，这时 `done` 还没 resolve。这保证了 await `done` 之后，生产者的资源一定释放干净了。
+结算规则是 first-wins：第一条终态记录落账，所有等待者被释放，监听器收到一轮隔离的通知，之后哪怕生产者又交来一个迟到的结果也不能改写或重复通知。
 
-### 结算：先到先得
+通知的次序有讲究：完成通知是最后发的，落在记录提交、其他所有观察者都过目之后。原因是一个报告者可能在收到通知时同步开一个模型 turn，如果通知先发，它看到的可能还是没提交的状态。把通知压到最后，保证任何开 turn 的人看到的都是已提交的终态。
 
-结算（settlement）是 first-wins 的：一个终态记录、释放所有等待者、一轮隔离的监听器通知，哪怕面对一个迟到的生产者结果。
+等待和读取也被这套账本管理。`wait` 用一个正的有限毫秒数设界，超时只报告"还在跑"，不会顺手把任务停掉。这里有个容易被通用策略误伤的点：这个超时被刻意排除在通用工具超时策略之外，否则通用策略会把一次正常的等待状态替换成超时错误。等到任务后来结算了，被压制的通知照样送达，终态快照赢。
 
-完成通知是最后发的，在记录提交、所有其他观察者都看过结算之后，因为一个 reporter 可能同步地开一个模型 turn。这条规矩很关键：如果完成通知先发，一个 reporter 开 turn 时可能还没看到最终记录，状态就不一致。把通知放到最后，保证 reporter 看到的是已提交的终态。
+快照上还有一个 `reported` 标志。kill、读、等或销毁路径一旦已经报告或承诺报告终态，它就置位，后续不再重复通知。销毁场景里这条尤其值钱：owner 正在销毁意味着没有读者了，标记 reported 让每一层销毁不再白烧一次模型请求。
 
-### attachController：没有控制器就不让起
+kill 和 read 的返回形状也被规定死了。kill 对活着的活返回"已请求"，对已结束的返回"早已完成"；生产者的 cancel 抛出的异常原样传播，但不改变账本状态。read 在终态时顺带标记 reported；流式活返回消费游标以来的增量，只给最终输出的活在运行期间读出空，结算之后读出幂等的终态输出。每条快照都是当次调用的新建只读投影，不是活状态的引用，所以拿着快照的人不可能改到注册表里。
 
-`start` 在"没有挂载的 job controller 服务这个 owner"时会拒绝工作。也就是说，一个生产者不能起一个"owner 收集不了也停不了"的 job。controller 通过 `attachController(name)` 挂载，它能读和停 job，服务它注册上下文 scope 覆盖的 owner。
+### controller 与并发上限
 
-这条规矩把"起了一个没人管的活"的漏洞堵死了。一个 job 起来时，必然有一个 controller 能读它、停它，否则根本不让起。
+`start` 在没有任何挂载的 job controller 服务这个 owner 时直接拒绝。也就是说，生产者不能起一个"owner 收集不了也停不了"的活。这个检查做在启动时而不是插件加载时，因为兄弟插件可能并发激活。controller 按效果作用域挂载，一个注册表服务进程内所有组合，监听器投递和 controller 服务都是 owner 相对的。
 
-并发上限方面，本地 provider 的 `maxConcurrentJobsPerOwner` 默认是 `10`，按确切 owner 数 running 加 stopping 记录，未归属的 job 共享一个桶。终态结算释放容量。
+并发容量按 owner 计，默认上限 10 个，统计口径是 running 加 stopping 的记录数，无主的活共享一个桶。没有排队、没有抢占：一个停得很慢的活会一直占着预算，只有生产者的 `done` 结算才释放它的位置。终态结算即释放容量。
 
-### tool-jobs 消费者
+### 活得比 agent 久意味着什么
 
-`dsh-tool-jobs` 是模型面向的消费者，它把 jobs 注册表的能力暴露成模型能用的工具（查 job 列表、读输出、停 job、等 job）。模型通过它管理自己起的后台任务。
+owner 的第一个任务会给 `owner.ctx` 挂一个异步 effect，`AgentHandle.dispose()` 要等拥有的后台工作停下来才 resolve。这带来一条容易被忽略的行为变化：后台 bash 现在跟着它的 agent 一起停，而不是活过它。想让一个活活得比 agent 久，必须以无主身份启动，无主的活对非 agent 调用方开放，随服务销毁而死。
 
-## 工作流引擎：`ctx.workflowEngine`
+还有一条关于插件生命周期的：任务注册不是产生它的 tool fiber 的 effect，重载工具或 controller 插件不会杀掉 agent 拥有的工作。job id 发布之后，取消权属于任务的 controller 和任务运行时，后续对产生它的那次工具调用的取消，不许顺手杀掉已发布的任务。一次预中止的后台调用会直接失败，而不是返回一个空转的句柄。
 
-`ctx.workflowEngine` 是另一个层次，定义在 `packages/workflow/workflow`。它让 agent 跑一段模型写的编排脚本，脚本里能起子 agent。
+### 模型怎么用：三个工具加一套提示
 
-和 bash 一样，它每个 context 只允许一个引擎实现提供 `ctx.workflowEngine`，没有命名 provider 注册表，第二个引擎通过插件配置替换第一个，而不是并存。这和 `ctx.jobs` 的多生产者、`ctx.lsp` 的多 provider 都不同，是因为引擎的语义更重，替换比并存更合理。
+`dsh-tool-jobs` 把注册表的能力翻译成模型能用的三个工具：查列表、读输出、停任务，外加完成通知的注入和系统提示里的使用指引。指引放在工具插件自己名下的提示段里，不放进部署的人设，这是"工具的指导归工具插件"的分工。
 
-### 启动请求：脚本加数据
+注册表自己还有两条监听通道，分工同样清楚。完成监听是效果作用域的，逐监听器隔离错误，监听器返回的 promise 会被观察但不被等待，服务销毁后不再运行任何监听器。变更监听在每次改变列表的提交之后触发：注册、每一次进入停止态、结算、归属清理、服务清空。它不是完成通知的超集：不携带投递含义，也不标记任何东西为已报告。一个想知道"列表变了就重画"的 UI 用后者，一个想"活完了叫醒我"的等待方用前者，混用就会出现要么漏通知要么漏刷新的怪账。
 
-起一次 run，调用方给一个 `WorkflowStartRequest`。核心是两样：`script` 是纯 JS 脚本体，顶层 `await` 可用，以 `return <json>` 结束；`meta` 是身份块（名字、描述、可选的阶段声明），纯 JSON 数据。可选的 `args` 原样暴露给脚本作全局变量，可选的 `subagentProvider` 和 `maxTotalAgents` 是引擎级的子 provider 覆盖和子 agent 总数上限，脚本自己观察不到也换不掉它们。`parent` 必填，脚本里每个子 agent 都归属到它，cwd、lineage、depth 经子 agent 接缝传下去。
+几个面向模型的细节。读输出带等待语义时，超时报告的是"还在跑"的状态，任务本身不动。生产者是否允许后台运行由它的配置决定（bash 默认允许），不允许时 schema 里压根没有那个参数，强制声明会被校验器按未声明键拒绝，而不是静默接受。输出上限是生产者拥有的展示策略：注册表校验它、原样投影，截断保持 UTF-8 边界并保留稳定的识别前缀，生产者负责把截断或溢出的说明格式进输出里。
 
-有三个要点。
+### 注册表设计里被拒掉的方案
 
-`meta` 和 `args` 是纯 JSON 数据，引擎在跑脚本之前按 schema 校验 `meta`，校验不过就大声拒绝，绝不为了拿 meta 去执行任何脚本文本。这是个安全细节：身份块是数据，不是代码，不能靠跑脚本去获得。
+设计笔记记录了几个明确否掉的方向，每个都说得出为什么。
 
-`parent` 必填保证每个子 agent 都有活的归属者，不会出现无主的扇出。
+按能力各做一套控制工具被拒：生命周期机制会重复实现，模型的 schema 和协议负担随生产者数量增长。现在每个生产者只适配三个钩子，协议只有一套。
 
-引擎级的 `subagentProvider` 和 `maxTotalAgents` 由调用方（部署配置）决定，脚本拿不到路由选择权。
+抽象的持久化后端被拒：进程内回调和精确的 `Agent` 实例是当前语义的地基，现在就把接口冻成持久化形状，会把身份、重启、归属的边界冻错。持久化是单独的设计，不是这层的紧急需求。
 
-`meta` 里的 `phases` 只是进度词汇：`phase()` 调用匹配标题给观察者看，不蕴含任何执行结构。别把 phase 当成真正的执行阶段，它纯粹是给人看的进度分组。
+消费者自持授权、广播式清理事件被拒：隔离不一致，而且广播给不出每个监听器一个的注册销毁器。
 
-### 结果：封闭的停止原因
+默认阻塞式读取被拒：会把父级串行化；单独加一个等待工具又多一次调用还不还输出。
 
-一次 run 的结果 `WorkflowResult` 有四样：`value` 是脚本的返回值（宿主 JSON 数据，仅 `completed` 时有意义）；`stopReason` 是封闭联合，取值 `completed`、`cancelled`、`error`；`error` 在非 `completed` 时带失败信息；`agentsStarted` 统计整个生命周期接受了多少 `agent()` 调用。
+运行时自持输出缓冲被拒：bash 已经拥有自己的缓冲、截断和溢出文件，注册表只取增量就是把所有权留在原处。随机 id、任务提升、生命周期会话事件也都被拒了：授权已经够用，提升缺一个规定的交互契约，而起停读写本来就以工具事件的形式在日志里。
 
-消费者把非 completed 的结果映射成 `isError` 工具结果，绝不把部分输出当成功报告。
+## 工作流引擎
 
-### 活的 run：结果永不 reject
+## 工作流引擎
 
-`WorkflowRun` 是消费者在脚本执行期间持有的句柄。消费者 await `result`，可以中途 `cancel`，必须在每条路径上 `dispose`。
+### 启动请求：meta 是数据不是代码
 
-两条硬规矩。
+起一次 workflow run，调用方给引擎一份请求：脚本体、身份块、可选参数。脚本是纯 JS，顶层 `await` 可用，以 `return <json-value>` 结束。`meta` 是身份块（kebab-case 的名字、描述、可选的阶段声明），纯 JSON 数据。`args` 原样暴露给脚本作全局变量。`parent` 必填，脚本里每个子 agent 都归属到它，工作目录、血统、深度经子 agent 接缝传下去。
 
-`result` 永不 reject，脚本失败 resolve 成 `stopReason: 'error'`。这和 jobs 的 `done` 不许 reject、code runtime 的错误是字段，是同一套纪律：失败走结果字段，不走异常。
+meta 的处理方式是 `dsh` 和 Claude Code 的一个刻意分歧。CC 把 meta 嵌在脚本文本里，宿主要获得它就得执行模型写的代码；`dsh` 把 meta 放在参数里，引擎在跑任何脚本文本之前按 schema 校验它，校验不过就大声拒绝。身份块是数据，永远不是代码。
 
-取消是有界的。一旦 run 被取消，它在引擎的有界 grace 内结算，哪怕脚本自己永远不结算（引擎强制结算 `cancelled`，worker-thread 引擎然后终止脚本的 worker）。所以一个 await `result` 的消费者，永远不会因为脚本卡死而被楔住。`dispose()` 等于 cancel 加有界结算加子 agent quiescence，它绝不会挂在卡死的脚本上。
+引擎级的两个旋钮，`subagentProvider` 和 `maxTotalAgents`，由部署配置决定，脚本观察不到也换不掉。模型拿不到路由选择权，这是后面 Ralph 能站得住的前提。`meta.phases` 只是进度词汇：`phase()` 调用匹配标题给观察者看，不蕴含任何执行结构。
 
-### 失败纪律：fatal 错误大声死
+脚本可用性上还有一个和 CC 不同的松绑：CC 为了可重放禁用脚本里的时钟和随机数，`dsh` 暂时不禁，脚本能正常拿时间戳和随机数做指数退避或采样。这个自由不是白来的，它依赖的前提是 meta 已经从脚本文本挪进了参数，身份信息不需要执行就能拿到；等 journal 和断点续跑真的做起来，确定性要求会跟着回来。现在这层松绑换来的是脚本写起来像普通代码，而不是在一堆禁令里绕行。
 
-`WorkflowError.fatal` 是个很重要的设计。脚本里的 hook 误用（坏参数、未知或延迟的 `agent()` 选项、schema 不在结构化输出子集里、触顶、接缝启动失败、取消）会抛一个 `fatal: true` 的 `WorkflowError`。
+### 结果与句柄：永不 reject 的 result
 
-`parallel()`/`pipeline()` 组合子对 fatal 错误是重新抛出，而不是把这一项映射成 `null`。为什么？因为一个拼错的选项必须让脚本大声死掉，绝不能溶解成一个看起来像普通子 agent 失败的东西。每项的 `null` 是留给子 run 失败（非 completed 的停止原因）和普通阶段内脚本错误的。
+一次 run 的结果有四样：`value` 是脚本的返回值（宿主域 JSON，仅 `completed` 时有意义）；`stopReason` 是封闭联合 `completed`、`cancelled`、`error`；`error` 在非 `completed` 时带信息，消费者把它映射成 `isError` 工具结果，绝不把部分输出当成功；`agentsStarted` 统计整个生命周期接受的 `agent()` 调用数，优雅结算时用脚本侧计数，强制终止路径上退化为宿主观测计数。
 
-这条纪律区分了两种失败：脚本的 bug（fatal，该让整个脚本死）和子 agent 本身的失败（每项 null，该被容错处理）。把它们混了，要么 bug 被静默吞掉，要么子 agent 失败把整个脚本搞崩。
+消费者在脚本执行期间持有的句柄有两条硬规矩。`result` 永不 reject，脚本失败 resolve 成 `stopReason: 'error'`，这和 jobs 的 `done` 不许 reject、code runtime 的错误是字段是同一套纪律。取消是有界的：run 被取消后，哪怕脚本永远不结算，引擎也会在有界的宽限期内强制结算成 `cancelled` 并终止 worker。`dispose()` 等于取消加有界结算加子 agent 静默，幂等，且绝不会挂在卡死的脚本上。
 
-### agent() 经子 agent 接缝扇出
+### fatal 与 null：两种失败不许混
 
-脚本里的 `agent()` 调用，经 `ctx.subagents` 扇出。每个 `agent()` 起一个子 agent，归属到 run 的 parent。
+脚本里的误用会抛 `fatal: true` 的 `WorkflowError`：坏参数、未知或延迟的 `agent()` 选项、schema 超出结构化输出子集、触顶、接缝启动失败、取消。组合子 `parallel()` 和 `pipeline()` 对 fatal 错误重新抛出，而不是把这一项映射成 `null`。
 
-这些子 agent 同时也是 `ctx.jobs` 上的 `subagent` kind 后台任务。这就是前面说的"workflow 用 jobs 做底层任务生命周期"：workflow 引擎负责编排逻辑，jobs 注册表负责每个子 agent 的身份、归属、生命周期。两层协作，不是替代。
+为什么必须这样？因为一个拼错的选项如果溶解成 `null`，它就和"子 agent 失败"不可区分了。脚本作者看到某项是 null，会去重试或换路子，而真正的 bug 应该让整个脚本大声死掉，被人看见。每项的 `null` 只留给两种情况：子 run 的非 `completed` 停止，和阶段内的普通脚本错误。pipeline 的阶段拿到前值、当前项、序号，没有跨阶段屏障；失败的项变 null 并跳过它的剩余阶段，别的项照跑。
 
-### 事件：只观察，给数据快照
+### 值边界：脚本世界与宿主世界
 
-`workflow/*` 事件（`workflow/start`、`workflow/phase`、`workflow/log`、`workflow/agent-start`、`workflow/agent-end`、`workflow/end`）是只观察的 emit，携带数据快照。隔离做在三层：
+脚本跑在每次一个新的 worker 线程里，worker 内用 vm 上下文收窄脚本可见的 API，消息端口 RPC 桥接 `agent()` 调用。脚本和宿主之间的值要过一个物化边界：出站的值被拷贝成宿主域 JSON，函数、symbol、循环引用、非有限数字一律拒绝；脚本抛出的值经一个全量渲染器处理，保证 `result` 没有任何路径 reject。hook 抛的错是宿主域的 `WorkflowError`，脚本按 `name` 和 `code` 分支，不按 `instanceof`，因为跨 realm 的原型链对不上。
 
-- 每个 payload 以 `WorkflowRunInfo`（id 加 meta）开头，永远不是活的 `WorkflowRun`，所以订阅者拿不到 `cancel`/`dispose`。
-- `workflow/end` 故意省略结果值，一个观察结果的监听器绝不能收到调用方结果的可变别名。
-- 每个 emit 是每监听器隔离的：抛错的订阅者只记日志、不传播、不会饿死后面的监听器；每个监听器收到自己的 payload 克隆，改它不会污染引擎或别的监听器。
+选 worker 而不是进程内 `node:vm`，理由是硬的：vm 里的同步自旋能无杀地占住宿主的事件循环，`dispose()` 就只能把一个不结算的脚本遗弃在宿主循环里。`isolated-vm` 也被考虑过，因为维护状态和部署要求被拒。信任前提和 bash 一致：vm 上下文和 worker 线程都不是安全边界。
 
-这套隔离和子 agent 的 `subagent/start`/`subagent/end` 是镜像的。
+### 事件：观察者拿不到控制权
 
-## 结构化输出
+六种 `workflow/*` 事件全是只观察的 emit，携带数据快照。隔离做在三个层面。每个 payload 以 run 信息（id 加 meta）开头，永远不是活的句柄，订阅者拿不到 `cancel` 和 `dispose`。`workflow/end` 故意省略结果值，观察结果的监听器绝不可能收到调用方结果的可变别名。每个监听器收到自己的 payload 克隆，抛错的订阅者只记日志、不传播、饿不死后面的监听器。
 
-workflow 脚本以 `return <json-value>` 结束，返回值是宿主领域的纯 JSON 数据。`WorkflowResult.value` 就是这个物质化的返回值（脚本没 return 东西时是 `null`）。
+`agent-start` 和 `agent-end` 成对出现，按序号配对，每条停止路径上每个启动过的调用恰好一次；宽限期外的终止，由引擎合成一个 `cancelled` 的 end 补齐。这套和子 agent 的事件是镜像的。
 
-`agent()` 调用可以带 schema，但 schema 必须落在文档所说的"结构化输出子集"（structured-output subset）里，超出会触发 `fatal` 错误。这把"子 agent 返回结构化数据"约束在一个安全可校验的范围内。
+### run 怎么落进会话日志
 
-`Ralph` 在仓库里对应 `packages/workflow/tool-ralph`，是 workflow 引擎的一个固定 consumer，提供面向模型的 `ralph` 工具。它把一个不可变的目标（objective）依次交给一连串全新的子 agent：每轮启动一个不继承父上下文的新子 agent，以共享工作区当长期记忆，靠结构化的"交接报告"（handoff）在轮次间传递状态。报告带 continue/complete/blocked 状态、非空摘要、证据、后续步骤和阻塞说明，在工作流内和消费边界做双重校验，无效或超限的报告让整个 workflow 失败，而不是被截断或误当成轮数耗尽。
+模型面向的消费者 `dsh-tool-workflow` 镜像了子 agent 工具的同步形状：启动、await 结果、finally 里 dispose，取消信号桥接到 run 的 cancel。使用政策作为工具名下的提示段下发，和 jobs 的指引同一个规矩。
 
-这就是社区所说的"Ralph 循环"，Geoffrey Huntley 推广的 Ralph Wiggum 模式：反复派全新 agent 处理同一目标，直到它自报完成。README 特别强调 Ralph 只是普通插件，构建在 `ctx.workflowEngine` 和 `ctx.subagents` 之上，agent-loop 里没有加任何"Ralph 模式"。
+日志侧有四种 `tool-workflow/*` 的纯日志事件把 run 记进父会话：接受后先写 run-start，成员按 run id 加序号配对，结果已知且处置静默后才写 run-end，嵌套的传输调用什么都不写。写入有前缀纪律：第一次追加失败就停用后续写入，日志要么为空、要么是一段合法的连续前缀，工具结果不受影响。
 
-它要求的"一条全新结构化输出路由"落在这里：每轮经 `subagentProvider`（默认 `spawn`）启动子 agent，该 provider 必须支持结构化输出且报告 `inheritsParentContext: false`。provider 由部署配置作为 `WorkflowStartRequest.subagentProvider` 传入固定脚本，模型拿不到路由选择权；轮数上限也作为 `maxTotalAgents` 传给引擎兜底。
+配套的不变量检查在回放时兜底：一次 run 恰一个 start、成员序号唯一且为正、成员结尾成对、没有 run 在成员未关时结束、结束之后没有更新。缺了尾部结尾按"中断证据"处理而不是"损坏"，因为强制终止本来就可能截断在中间。UI 把四个事件折叠成一个 run 节点，渲染时把缺失的终态事实显示为"被打断"，而不是编一个结局。
 
-限制也诚实：完成与否靠子 agent 自报，没有独立评估者；仅前台运行；普通子 agent 失败即终止整个运行，不重试那一轮；只有轮数上限，没有 token、价格、时间预算。
+## 结构化输出怎么落到子 agent
 
-## 真实代码落点
+workflow 的返回值是纯 JSON，子 agent 也可以被要求结构化返回：`agent()` 带 schema，schema 必须落在一个可强制执行的 JSON Schema 子集里，超出就 fatal。这个子集的守门是手写的，因为 ajv 校验全量 JSON Schema 且用 `new Function` 编译，两者都不合要求；zod 也不行，它只单向生成 JSON Schema。provider 的 JSON 模式同样被拒：它保证合法 JSON，不保证符合 schema。
 
-- `packages/jobs/jobs/src/types.ts`：`JobStart`、`JobHooks`、`JobOutcome`、`JobSnapshot`、`JobKindMap`。
-- `packages/jobs/jobs/src/index.ts`：`JobRegistry` 抽象接缝。
-- `packages/jobs/jobs-local`：进程内 provider，`maxConcurrentJobsPerOwner` 默认 10。
-- `packages/jobs/tool-jobs`：模型面向的消费者。
-- `packages/workflow/workflow/src/types.ts`、`runtime-types.ts`：workflow 词汇表与 run 句柄。
-- `packages/workflow/workflow-worker-thread`：`node:worker_threads` 引擎，每次 run 一个 worker。
-- `packages/workflow/tool-workflow`：模型面向的消费者。
+落到执行层，每个结构化子 agent 有自己独立作用域的捕获工具和指令，并发跑的子 agent 可以各用各的 schema。规则是硬的：带 schema 的子 agent，成功完成必须包含一次 schema 合法的提交；校验失败是可重试的工具错误；干干净净跑完却没提交，结算为错误。提交之后拒绝副作用，也不再走下一步模型调用。
+
+## Ralph：固定脚本的消费者
+
+Ralph 对应 `packages/workflow/tool-ralph`，是 workflow 引擎的一个固定消费者，把社区说的"Ralph 循环"（Geoffrey Huntley 推广的 Ralph Wiggum 模式）做成一个工具：把一个不可变的目标依次交给一连串全新的子 agent，直到有谁自报完成。
+
+每一轮的子 agent 只拿到四样东西：不可变的目标、当前轮数和上限、一份"共享工作区是权威"的指令、上一轮的结构化交接报告。父对话和之前子 agent 的会话永不注入。工作区是唯一的跨轮记忆，轮与轮之间只有一份有界的报告在传递。
+
+交接报告带状态（continue、complete、blocked）、非空摘要、证据、后续步骤、阻塞说明，序列化上限 16384 字符，在工作流内和消费边界各校验一次。无效、缺失或超限的报告让整个 workflow 失败，而不是被截断或误判成轮数耗尽。这条硬线防的是一个静默腐烂的循环：一份被偷偷截短的报告会让下一轮在残缺状态上继续空转。
+
+轮数上限默认 256，它同时是默认值和调用覆盖的天花板，解析出的上限还作为引擎的子 agent 总数后盾传下去，部署上限之上一分不接受。子 provider 必须支持结构化输出并报告不继承父上下文，默认 `spawn`；provider 随启动请求传入固定脚本，模型拿不到路由选择权。provider 的能力解析是按调用重做的，因为插件生命周期和热重载可能中途换掉注册表，缓存一次能力判断会在重载后说谎。配置在插件应用时就校验，哪怕 Loader 没跑规范化也拦得住坏值。普通子 agent 失败时整个运行报错并点名失败轮次，保留最后一份成功交接，明确不重试那一轮。终端标签是 `complete`、`blocked` 或 `budget-limited`，措辞诚实：它声明的是"某个 worker 报告了这个结果"，不是独立评估者的认证。
+
+系统提示把使用面收得很窄：只有用户明确要求 Ralph 循环或全新 agent 迭代执行时才用。中间子 agent 的消息永远不进父对话，固定定义下 KV 缓存前缀稳定，每轮付的是固定的小额 token 成本。
 
 ## 权衡与局限
 
-workflow 一个 context 只能有一个引擎，和 bash 一样没有命名 provider 注册表。想同时跑两种不同语义的编排引擎不行，得通过配置替换。这是用"替换"换"语义一致"的取舍。
+jobs 没有排队和抢占。慢停的活占着并发预算，只有结算才释放；调用方要么杀掉不相干的工作，要么依赖销毁兜底。后台进程没有执行器超时，这是把"什么时候该停"留给调用方的代价。
 
-job id 可预测，安全靠 owner。这要求所有访问路径都老老实实做 owner 校验，一个忘了校验的路径就是漏洞。这是把安全建立在"每次访问都授权"而不是"id 保密"上的代价。
+后台 bash 随 agent 停止而不是活过它。想让它活过 agent 就得以无主身份起，而无主意味着对非 agent 调用方开放。流式读取只有一条消费游标，拥有它的模型是唯一读者，UI 要读就得有另一套非消费 API。
 
-workflow 脚本是模型写的代码，和 code runtime 一样有风险。meta 是数据不执行这点防了一部分，但脚本体本身要靠沙箱、审批、子 agent 的权限策略兜底；worker-thread 不是安全边界，isolation 是诊断标签，不是安全承诺。dispose 是消费者的责任，忘了 dispose 会在有界 grace 内被强制结算，但那是兜底，不是借口不管。
+一个已知后果：`cancel` 返回了却不结算 `done` 的生产者会堵住销毁，运行时无法把它和一次合法的慢停区分开。防住它的办法在契约里（cancel 必须最终结算 done），不在运行时。
+
+workflow 一个 context 只有一个引擎，没有命名 provider 注册表，换引擎靠插件配置替换。想同时跑两种编排语义不行，这是用"替换"换"语义一致"。每次 run 付一次 worker 启动和 RPC 成本；脚本的中间值不落会话日志，只有四次 `tool-workflow/*` 事件记录轮次边界，所以重放不能重建脚本内部的中间结果。
+
+一批能力被刻意推迟而不是做一半：后台收集（起一个 run 拿 id、收到通知再收结果）留给整体的后台重设计，因为 shell、子 agent、workflow 应该共享一套后台语义而不是各自发明；journal 加断点续跑被推迟，因为它会把 CC 对时钟和随机的确定性禁令重新引进来，脚本现在能用时钟和随机数，代价是没有中断恢复；嵌套 workflow、token 预算、总墙钟超时同理，超时尤其被定性为"后台重设计的策略旋钮，不是正确性需求"。
+
+Ralph 的完成靠子 agent 自报，没有独立评估者；仅前台运行，没有 job id、后台收集、断点续跑；预算只有轮数，token、价格、时间预算都推迟了。每轮一个全新子 agent，一轮就是一条命：没有扇出、没有中途换 provider、没有分叉上下文，未提交的对话推理随轮丢弃，工作区是唯一的延续。
 
 ## 结论
 
-`ctx.jobs` 管身份（`<kind>-N`）、归属（owner 授权不靠 id 保密）、生命周期（first-wins 结算、完成最后通知、没 controller 不让起），bash 和子 agent 都注册在它上面。`ctx.workflowEngine` 是建在上面的编排脚本引擎，模型写脚本用编程逻辑扇出子 agent，子 agent 经 `ctx.subagents` 起、同时在 jobs 上注册。两层各管一段：workflow 编排逻辑，jobs 管底层任务生命周期，子 agent 是两者的交汇点。
+`ctx.jobs` 把后台任务的身份、归属、生命周期收进一个注册表：id 可预测所以安全必须走 owner 授权，preflight 全部先于 `run()` 所以注册后没有可失败步骤，结算 first-wins 且完成通知最后发，没有 controller 服务的 owner 连活都起不了。`ctx.workflowEngine` 在其上让模型写编排脚本：meta 作为数据校验而不求值，`result` 永不 reject，取消有界，fatal 错误和子项 null 严格分流，观察者拿到的永远是快照不是控制权。Ralph 站在栈顶，用一份固定脚本、一串全新子 agent、一份双重校验的交接报告实现迭代循环，自己只是个普通插件。每一层都可以单独换掉：换 jobs 的 provider 不动 workflow，换 workflow 引擎不动 Ralph，这正是接缝分层的意义。
 
 ## 延伸阅读
 
-- [Background Task Runtime 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/jobs.md)：本文主要依据之一，含生产者契约与注册表语义
-- [Workflow 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/workflow.md)：本文另一主要依据，含脚本、meta、run、失败纪律
-- [Generic long-running tool runtime 笔记](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-06-20-generic-long-running-tool-runtime.md)：jobs 的设计
-- [Dynamic workflows 笔记](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-07-05-dynamic-workflows.md)：workflow 的提案与理由
-- [Capability Seams](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/capability-seams.md)：`ctx.jobs`、`ctx.workflowEngine` 行
+- [Background Task Runtime 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/jobs.md)：注册表语义、生产者契约、结算次序
+- [Workflow 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/workflow.md)：脚本契约、失败纪律、事件隔离
+- [Generic long-running tool runtime 笔记](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-06-20-generic-long-running-tool-runtime.md)：jobs 的设计决策与被拒方案
+- [Dynamic workflows 笔记](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-07-05-dynamic-workflows.md)：workflow 提案、组合子语义、结构化输出基础
+- [tool-ralph README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/workflow/tool-ralph/README.md)：Ralph 契约、交接报告校验、配置默认值
 
 上一篇：[Code Runtime 与 Code Mode：dsh 让模型写代码并执行](./23-code-runtime-and-code-mode.md)
 下一篇：[dsh 的 Web 搜索抓取与 Skills 技能系统](./25-web-search-fetch-and-skills.md)
