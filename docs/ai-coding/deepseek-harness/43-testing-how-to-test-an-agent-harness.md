@@ -1,230 +1,184 @@
 # 测试体系与性能压测：怎么测 dsh 这个 agent harness
 
-> `dsh` 的测试政策有一条反直觉的原则叫"我们是 DeepSeek，不要吝啬真 API 测试"，没有 key 的测试只证明管道通，有 key 的运行才证明 agent 真能干活；每层测试都有自己回答的问题，不能互相替代。
-> 这一篇拆五层测试体系（外加一条 opt-in 的 Web 性能压测 lane）、with-key 策略、"验证世界不验证自述"原则、HMR 安全测试，以及为什么 mock 能让单测全绿但产品是坏的；后半段落到 `apps/web/tests/complex-history.perf.ts`，看性能压测为什么不做时间断言、只做结构断言。
+> 测一个 agent harness 的难点不在写断言，在挡住两类假绿：一类是覆盖率造假，代码行全跑过了但产品在真实入口上是坏的；一类是自述造假，断言盯着的对象恰好是 agent 自己说的话。`dsh` 的答案是一套分层测试加几条纪律：五条 CI lane 各答一个问题，mock 只留在昂贵或不确定的边界，断言永远重新去读世界而不是读 agent 的自述。性能压测单拆一条手动 lane，它拒绝时间断言的理由值得单独记一句：宿主速度不是正确性契约。
+> 最好的一份教材是 postmortem 0001：178 个单测全绿、行覆盖率 100%，真实的 Zed 编辑器一连上来就崩。这个案例把"为什么每层测试都不能互相替代"讲得比任何原则陈述都清楚。
 
-## 五层测试
+## agent harness 的测试难在哪
 
-`dsh` 的测试分五层，每层回答不同的问题。
+写过一个 agent 应用的人多半见过这种场景：单测全绿，CI 全绿，真的把编辑器连上来，第一个 RPC 就挂。这不是测试写得敷衍，是 agent harness 这个形态天然给测试挖了三个坑。
 
-- Unit（`pnpm run test`）：vitest 跑包和示例的 `tests/**` 目录，加上仓库脚本 `scripts/**/*.spec.ts`，测试和被测代码放在一起。这一层覆盖边缘情况、错误路径、事件顺序、并发竞争、契约回归。每个 registry 还有一个 HMR 安全测试（销毁贡献 fiber，断言清理）。
-- Coverage gate（`pnpm run test:coverage`）：门禁运行，`packages/*/*/src` 上 per-file 100%。一行没覆盖通常意味着那行是死代码，门禁正确地在标记它该删，而不是缺一个测试去补。行覆盖是必要的，但永远不够：它证明代码行跑过，不证明功能按发布版本工作。
-- Real-API e2e（`pnpm run test:e2e`）：有 key 的测试打真实 provider API。DeepSeek 模型加上 provider 特定的 smoke（`EXA_API_KEY`、`PERPLEXITY_API_KEY` 等）。每个 suite 没有自己 key 时 self-skip。
-- Snapshot（`pnpm run test:snapshot`）：无 key 的期望输出覆盖外部行为（传输契约和呈现），持久化日志钉住组装后的后端行为。ACP 启动真实的 automation-server 示例，回放一个录制的 session，diff 归一化的 JSON-RPC 加重新持久化的日志。headless 后端场景通过一个非导出的 JSONL 测试驱动启动显式示例组合。
-- Web browser snapshot（`pnpm run test:web`）：Chromium 把回放的浏览器输出和 `apps/web/tests/snapshots/` 比较，这是 Linux PR 必须的门禁。CI 强制只读 `DSH_SNAPSHOT=replay`，不写期望输出；record/refresh 只在本地做，每个 diff 都要 review。
+第一个坑是非确定性。同样的输入，模型这一轮和下一轮的输出不同，网络这一秒和下一秒的延迟不同。传统测试的基本假设是"给定输入断言输出"，在这里对不上号。解法不是放弃断言，而是把确定性切出来：mock 掉模型和网络这两个不确定源，让它们变成脚本化的回放，剩下的部分就恢复成了普通的确定性代码。
 
-在这五条 CI lane 之外，还有一条 opt-in 的手动性能诊断 lane，这篇后半部分单拆。
+第二个坑是入口被绕过。harness 的产品形态是"通过 Loader 加载插件树再启动"，而测试写起来最舒服的形态是"手工 new 一个 context，把插件直接塞进去"。两种形态跑的是同一份业务代码，单测覆盖率统计不到差别，但真实用户走的是前者。一个在加载层发生的错误，手工组装的测试永远碰不到。
 
-## with-key 策略：不吝啬真 API 测试
+第三个坑是自述污染。agent 的输出是自然语言，最省事的断言是在输出里搜一个关键词，比如 agent 说了"我已写入文件"就当写入成功。问题是模型会胡说，一个作弊的或者幻觉的 agent 也能说出这句话。断言盯着的对象和被验证的事实不是同一个东西。
 
-这是整个测试政策里最反直觉的一条，原文用粗体写：
+`dsh` 的测试体系就是对着这三个坑建的：五条 CI lane 各自负责一块，外加几条贯穿的纪律，最后还有一条手动的性能诊断 lane。
 
-> We are DeepSeek. Do not ration real-API tests.
+## 五条 lane，各答一个问题
 
-翻译过来：**我们是 DeepSeek，不要吝啬真 API 测试。**
+五条 lane 的划分标准不是测试的大小或者速度，是每条 lane 回答的问题不同。把五条 lane 的答案连起来，才凑齐"这个 harness 能发布"的完整证据。
 
-逻辑很直接：没有 key 的测试只证明管道通，只有有 key 的运行才证明 agent 能对真实模型工作。所以 `dsh` 要求覆盖写文件的 prompt、多轮对话、工具使用、流中途取消。
+Unit 跑 `pnpm run test`，vitest 扫包和示例的 `tests/**` 目录加仓库脚本的 spec。这一层覆盖边缘情况、错误路径、事件顺序、并发竞争。每个注册表还带一个 HMR 安全测试，销毁贡献的 fiber 再断言注册被清理，后面单拆。
 
-最高价值的是 smoke 测试：启动真实示例，发一个 prompt，检查世界。它们抓的是"单测全绿但产品是坏的"这一类 bug，mock 抓不到。
+Coverage gate 跑 `pnpm run test:coverage`，在 `packages/*/*/src` 上要求 per-file 100% 行覆盖。这个数字乍看激进，它的解释写得很清楚：一行没被覆盖，通常意味着那行是死代码，门禁在正确地标记它该删，而不是缺一个测试去补。行覆盖是必要条件但永远不充分，它证明代码行跑过，不证明功能按发布的样子工作。这两句话的差距，正是后面那个 postmortem 的主题。
 
-每个 suite 没有 key 时 self-skip，这不是成本信号，是让无 key 的 CI 和无 key 的贡献者不被阻塞。每个示例都自带无 key 和有 key 两套 smoke。
+Real-API e2e 跑 `pnpm run test:e2e`，带 key 打真实 provider。DeepSeek 模型之外还有 provider 特定的 smoke，凭 `EXA_API_KEY`、`PERPLEXITY_API_KEY` 这类环境变量开门。每个 suite 没有自己的 key 时自我跳过。这层存在的理由下面单拆。
 
-## 用真实实现，不用 mock
+Snapshot 跑 `pnpm run test:snapshot`，无 key 的期望输出覆盖外部行为。传输契约、呈现格式、组装后的后端行为，都以持久化日志的形式钉住。当模型 transcript 变了用 `test:snapshot:record` 重录，当回放输入还有效用 `test:snapshot:refresh` 刷新，每次 diff 都要人审。
 
-`dsh` 的 mock 原则很克制：**只 mock 昂贵或不确定的边界（LLM adapter、网络、时钟），下游全部用真实实现。**
+Web browser snapshot 跑 `pnpm run test:web`，Chromium 把回放的浏览器输出和 `apps/web/tests/snapshots/` 里的期望比较，是 Linux PR 的必过门禁。CI 强制只读模式 `DSH_SNAPSHOT=replay`，期望输出只能在本地刷新，防止 CI 顺手把坏掉的行为录成新标准。
 
-一个手写的替身只证明桥搬运了字节，不证明发布的工具按断言工作。桥的工具调用测试用脚本化的 mock 模型加真实的工具和执行器：`makeBridgeHarness({ withBash: true })` 插入 `dsh-bash-local` 和 `dsh-tool-bash`，然后跑 `echo`。
+lane 的家族还在长。仓库的 package.json 里能看到 `test:coverage:partitioned`（分区跑覆盖率）、`test:web:stress`、`test:gui`、`test:issue-management` 这些新入口。五条是主干，不是全部，这是我的归纳，依据是命令目录的当前形态。
 
-恢复测试按 step 分离 chunk 前后的失败，证明失败的 chunk 不产生 message 或工具副作用。覆盖耗尽、取消、策略组合、持久化、状态、wire 计数、传输关闭的 idle 超时、以及发布的 Loader 组合。
+## 一个完整的反面教材：postmortem 0001
 
-这条原则的深层含义是：mock 越少，测试越接近真实。一个 mock 模型加真实工具和真实执行器的测试，比一个 mock 模型加 mock 工具的测试能抓到多得多的 bug。代价是测试更慢、更依赖环境，但 `dsh` 选择用环境管理（CI runner、self-skip）来处理这个代价，而不是用更多 mock 来回避它。
+这条值得完整讲一遍，因为它同时踩中了上面三个坑里的两个，而且每一步都有测试全绿作背景。
 
-## 验证世界，不验证自述
+事情的主角是 ACP 桥，一个把 dsh 接到 Zed 这类编辑器的示例包。桥合入的时候带着完整的单测覆盖、一个带 key 的真 API e2e、一个无 key 的 stdout 纯净性 e2e，全绿。然后第一个真实的 Zed 会话连上来，第一个 RPC `session/new` 直接抛错，第二个 RPC `session/load` 也抛错，同一个报错字符串：无法在没有 inject 的情况下取某个属性。结果是零个会话能创建或加载，对任何想把 agent 接进 Zed 的人来说是硬故障。
 
-这条原则是区分好测试和坏测试的分界线。
+排查的过程本身是个教训。调查者先提出了一个优雅的理论：Cordis 的 traceable 机制在 fiber 上做了影子代理，可能是代理层吞了属性。他们在 vendored 的 reflect.ts 里给 fiber 遍历加了插桩，跑真实子进程，trace 显示抛错发生在插件加载时的根 fiber 上，根本没有影子。理论被证伪，真凶一秒钟现形：插件文件末尾多了一行 `export default apply`。
 
-一个 e2e 断言应该重新跑命令或重新从外部读文件。一个在 agent 自己输出上的关键词探针，会让一个作弊的 agent 通过。
+这一行为什么致命。这个插件是命名空间插件，导出 name、inject、Config、apply 一组命名导出。Cordis Loader 的 `unwrapExports` 优先取 `.default`，于是整个模块被解包成光秃秃的 apply 函数，同文件的命名导出全部被丢弃。fiber 拿着空的 inject 构建，`ctx.agents` 一访问就抛。命名空间插件和 default 导出在 Cordis Loader 下互斥，这一行是多写出来的。
 
-正确做法的例子：
+删掉这行，`session/load` 还在抛。第二个 bug 才是那个影子理论的真身：`AgentLoop.resume` 里用属性访问读 `this.ctx.sessionPersistence`，而 `AgentLoop` 的 static inject 刻意不含这个服务（不强制非持久化示例依赖它）。这个服务住在兄弟 fiber 里，代理的 fiber 遍历只走祖先，走到根还找不到就抛。修法是把属性访问换成 `ctx.get('sessionPersistence')`，一个不依赖拓扑位置的查找。
 
-- 断言未触及的文件是字节一致的：不是检查 agent 说"我没改那个文件"，而是重新读那个文件和原始版本对比。
-- 断言 agent 真的写了文件：不是检查 agent 说"我写了文件"，而是检查文件存在且内容正确。
-- 断言命令真的执行了：不是检查 agent 说"我跑了命令"，而是检查命令的副作用。
+现在回到最刺眼的问题：178 个绿测试和 100% 行覆盖，为什么一个都没抓到。三个原因，每个都对应一条测试纪律。第一，单测的 harness 用手工的 `ctx.plugin({ name, inject, apply })` 挂载插件，inject 是手工给的，Loader 和 unwrapExports 整个被绕过，那行致命的 default 导出根本不在测试的路径上。第二，所有东西都平铺挂在一个根 context 上，属性读取走了顶层旁路，一个忽略 fiber 拓扑的全局查找，第二个 bug 的抛错路径同样不在场。第三，无 key 的 e2e 只发了 `initialize`，够不到工厂调用；带 key 的 `session/new` e2e 在 CI 上因无 key 跳过，在本地"通过"则是因为一个陈旧的构建产物 lib 目录骗过了模块解析，测试加载的根本不是当前源码。
 
-e2e 测试拥有自己的资源：在测试里创建 harness，在 `afterEach` 里 dispose（即使在失败、重试、超时时）。共享 fixture 放在普通的 `tests/harness.ts` 里，不是另一个 `*.e2e.ts`（import 一个 spec 会重新注册它的 `describe` 并复制真实 API 调用）。
+修复清单里除了删掉那行导出、换成 `ctx.get`，还有两件防复发的：加一个无 key 的 `session/new` e2e，把示例当真实子进程通过真实 Loader 启动，并验证过把坏导出还原时它会红；在 e2e 的 spawn 里设置 `TSX_TSCONFIG_PATH`，让模块解析指向源码而不是陈旧的 lib。postmortem 里的一句话值得原样记住：覆盖率证明代码行跑过，它不证明功能按发布的样子工作。
 
-## 测真实入口路径
+## 真实入口路径：三条具体要求
 
-这条原则解决"测试覆盖了代码但没覆盖入口"的问题。
+postmortem 的教训被沉淀成三条可执行的要求。
 
-产品可见的插件要求一个非 unit 的 REAL 组合测试。手建的 `ctx.plugin(...)` suite 不够：要通过 Loader 和 app/process 启动 test-only 的 `cordis.yml`，只 mock 外部服务或不确定输入，断言模型可见的 request/log、持久化状态、或用户可见输出。
+产品可见的插件需要一个非 unit 的真实组合测试。手工 `ctx.plugin(...)` 的 suite 不算数，要通过 Loader 和 app 进程启动一个 test-only 的 `cordis.yml`，只 mock 外部服务，断言模型可见的请求和日志、持久化状态或用户可见输出。判断标准就一条：这个测试走过的加载路径，和用户运行时走过的，是不是同一条。
 
-一个 guard 只有在回归真的让它失败时才 guard。对于一个没有 `inject` 的插件（bundle/composition 插件），一个 Loader smoke 在 default export 替换了必需的 named exports 时保持绿。解法是加一个显式的 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返断言，然后证明它：引入回归，看红，还原。
+守卫要先证明自己会红。一个 guard 只有在回归真的让它失败时才 guard。对于一个没有 inject 的插件，Loader smoke 在 default 导出替换了必需的命名导出时照样绿，因为它的路径根本不经过那组导出。dsh 的解法是显式断言 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返检查，然后照仪式证明它：引入回归，看它红，还原。没看过红的守卫，等于没有守卫。
 
-"真实入口路径"意味着发布的 artifact：一个包的 `bin` 在普通 `node` 下跑构建后的 `lib/bin.js`，暴露 tsx 掩盖的失败（settle 竞争、模块解析、吞掉的加载失败）。built-artifact smoke（`packages/examples/*/tests/built-bin.e2e.ts` 等）必须保持绿，并断言一个真正缺失的配置以非零退出。
+测发布的产物。一个包的 bin 要在普通 node 下跑构建后的 `lib/bin.js`，因为 tsx 会掩盖一批失败：settle 竞争、模块解析、被吞掉的加载错误。built-artifact smoke（如 `packages/examples/*/tests/built-bin.e2e.ts`）必须保持绿，还要断言配置缺失时以非零码退出。postmortem 里那个陈旧 lib 骗过本地测试的事故，反过来也说明构建产物一旦参与解析就必须被显式测试拥有。
 
 ## 测试解析：源码平面
 
-这条解决"测试加载了错误的模块副本"的问题。
+postmortem 暴露的"陈旧 lib 骗过模块解析"被一条全局规则堵住：所有 vitest config 把 vite-tsconfig-paths 指向 `tsconfig.base.json`，裸 workspace import 一律解析到 `src`，永远不经过 package exports 到构建后的 lib。两份模块 singleton 导致的状态不一致，从根上不允许发生。
 
-每个 vitest config 把 vite-tsconfig-paths 指向 `tsconfig.base.json`。裸 workspace import 解析到 `src`，永远不通过 package `exports` 到构建后的 `lib/`。`lib/` 里的过期 artifact 会加载第二份模块 singleton，导致状态不一致。
+构建产物只在被显式消费时参与：lib 模式的子进程和 built smoke。子进程的启动统一走共享的 dual-mode launcher，CI 和带 build 的 lane 从构建后的 lib 启动每个示例子进程，不手写 `--import tsx`。不加载 Cordis 的协议和 OS fixture 用可擦除的 `.ts` 直接以 Node 跑。只有测试主题本身就是源码路径解析时才选 `src`，并且要在测试里把这个契约写出来。
 
-构建 artifact 只被显式消费：`lib`-mode 子进程和 built smokes。
+双份代码同时在场的故障形态值得说具体。测试进程里一旦同时加载了 src 的模块和 lib 的模块，两个文件各自持有自己的模块级状态，注册表、计数器、单例服务全是两份。症状是诡异的状态不一致：注册了却查不到，计数对不上，事件监听重复触发，而且每次复现的路径还不一样。postmortem 里本地测试"通过"的那次，正是陈旧 lib 满足了模块解析，测试自以为在验证修复，实际加载的代码连修复都还不含。把解析钉死在源码平面，等于把这一整类"测的不是你想的那份代码"从根上排除。
 
-子进程启动模式分三种：
+这套安排的要点是让"加载的是哪份代码"从运气变成声明。测试作者不再需要记得哪个目录下有陈旧构建，规则在配置层就把歧义消灭了。
 
-- CI 和有 build 的 test lane 通过共享的 dual-mode launcher 从构建后的 `lib/` 跑每个 example 或 Cordis-config 子进程，不要手写 `--import tsx`。
-- 不加载 Cordis 的协议和 OS fixture 用可擦除的 `.ts` 直接用 Node 跑，不用 tsx 或 root paths map。
-- 只有测试主题是源码路径解析时才选 `src`，在测试里声明这个契约。
+## with-key 策略：不要吝啬真 API 测试
 
-## 快照测试什么时候必须
+测试政策里最反直觉的一条用粗体写：We are DeepSeek，不要吝啬真 API 测试。
 
-每个非平凡的模型、协议或人类可见的变更，在同一个 PR 里通过 runnable example 的 snapshot suite 加或更新一个无 key 场景。
+逻辑链条是这样的。无 key 的测试只证明管道通，请求能组出来、流能被解析、事件能被分发。带 key 的运行才证明 agent 对真实模型工作：模型真的会按这个 schema 调工具，多轮对话真的能维持状态，流中途取消真的能干净停止。前者是 plumber 的验收，后者才是产品的验收，两者之间隔着模型行为这个最大的不确定源，而恰恰是这个源，除了真打没有任何替代品。
 
-包测试、e2e 断言、mock/test-only 组合、PR 理由都不替代组装后的 transcript。需要时扩展 harness。
+所以要求反过来写：覆盖写文件的 prompt、多轮对话、工具使用、流中途取消，都要有带 key 的版本。最高价值的是 smoke 测试，启动真实示例，发一个 prompt，检查世界。它们抓的就是"单测全绿但产品是坏的"，postmortem 0001 那一类。
 
-不同 surface 的快照归属：
+每个 suite 没有 key 时 self-skip 是配套设计。跳过不是成本信号，是让无 key 的 CI 和无 key 的贡献者不被阻塞，同时保证有 key 的环境一跑就覆盖。每个示例自带无 key 和有 key 两套 smoke，两边互补而不冗余。
 
-- ACP automation 场景用 `examples/<name>/tests/snapshots/`
-- headless 后端场景用 `examples/headless-agent` 的内部 canonical-event JSONL 快照和回放 fixture
-- 交互终端旅程用 `apps/cli/tests/snapshots/` 下的 JSONL 驱动场景
-- 浏览器渲染的 Web GUI 旅程用 `apps/web/tests/snapshots/`
+真 API 测试自己的两个麻烦也要管住。一是慢和不稳，模型一次往返秒级起步，网络抖动会把偶尔的失败带进来，所以带 key 的断言偏向世界状态的强断言而不是输出文本的弱匹配，一次失败值得人看一眼而不是重试掩盖。二是费用和钥匙管理，provider 特定的 smoke 按环境变量分门别类，一个跑不起来的 suite 静默让位，不拖累整条 lane。这两条管理动作和"不吝啬"是一体的：不设上限的前提是失败信号干净，脏的重试和漏水的跳过会让最贵的测试层最先失去公信力。
 
-一个 ACP 场景（`text-turn`）钉住完整的 system-prompt/tool-schema 内容，其他 fixture 把它 tokenize，这样一个编辑只动一行。这是刻意的设计：一个 header 改动只影响一个 fixture，不需要更新几十个。
+## mock 的边界：只 mock 昂贵或不确定的东西
 
-用 `pnpm run test:snapshot:record` 当模型 transcript 变了，用 `pnpm run test:snapshot:refresh` 当回放输入仍然有效。每个 JSONL 和期望输出 diff 都要 review。
+mock 原则一句话：只 mock 昂贵或不确定的边界，LLM 适配器、网络、时钟，边界下游全部用真实实现。
 
-## 每个注册表都有 HMR 安全测试
+一个手写的替身只证明桥搬运了字节，不证明发布的工具按断言工作。桥的工具调用测试用脚本化的 mock 模型配真实的工具和执行器：`makeBridgeHarness({ withBash: true })` 插入真实的 bash 执行插件，然后跑一条 `echo`。mock 模型加真实工具的组合，能抓到 mock 模型加 mock 工具永远抓不到的问题，比如工具 schema 组装错了、执行器的环境不干净。
 
-五层测试里提过一句：每个 registry 都有一个 HMR 安全测试，做法是销毁贡献 fiber、断言清理。这里说它为什么重要。
+恢复测试是这套组合的深度用法：按 step 分离 chunk 前后的失败，证明失败的 chunk 不产生消息或工具副作用，同时覆盖耗尽、取消、策略组合、持久化、wire 计数、传输关闭的空闲超时。这些路径全在真实管线上跑，只有模型本身是回放的。
 
-`dsh` 是全插件化的，注册是可逆副作用，HMR 安全是核心质量。如果 HMR 后旧实例的注册没清理，新实例和旧实例的注册会冲突。这个测试确保不会发生，它把"注册是可逆副作用"从口号变成 Cordis 注册模型的运行时保证。
+代价是测试更慢更依赖环境。dsh 的选择是用环境管理消化这个代价，CI runner 分 lane、self-skip 按钥匙，而不是用更多 mock 回避它。
 
-## 第六条 lane：Web 性能压测
+## 验证世界，不验证自述
 
-功能测试（e2e、snapshot）回答"行为对不对"，性能测试回答"扛不扛得住"。两个问题的失败模式不同，测试方式也不同。所以性能压测是一条独立的 opt-in lane，落在 `apps/web/tests/complex-history.perf.ts` 这个浏览器 benchmark 里。
+这条纪律区分好测试和坏测试，标准只有一句话：e2e 断言应该重新跑命令或重新从外部读文件，而不是在 agent 的输出上探针。
 
-它通过一个独立的 vitest config 运行，文件叫 `vitest.web.perf.config.ts`：以 `webConfig` 为基础，`include` 收窄成 `['apps/web/tests/**/*.perf.ts']`，打开 `disableConsoleIntercept`，把 hookTimeout 和 testTimeout 分别放宽到 3 分钟和 10 分钟。
+在 agent 输出上搜关键词，会让一个作弊的 agent 通过。这不是假设，模型会幻觉、会提前宣称成功、会把失败的执行描述成完成。断言的对象必须和被验证的事实同一个东西。
 
-几个关键配置选择揭示了它的定位：
+落到操作上是三类具体做法。断言未触及的文件字节一致，重新读那个文件和原始版本比，而不是检查 agent 说没改它。断言 agent 真的写了文件，检查文件存在且内容正确，而不是检查 agent 说写了。断言命令真的执行了，检查命令的副作用，而不是检查 agent 说跑了。
 
-- 独立 include：只跑 `.perf.ts` 文件，和 CI web gate 的 `.e2e.ts` / `.snapshot.ts` 分开。
-- 不拦截 console：性能测试通过 `console.info` 打印测量结果，所以不禁用 console。
-- 超时很长：性能测试要构造大量数据、等渲染稳定，跑得慢。
-- 手动诊断：注释明确说，手动高基数诊断留在 CI web gate 之外。
+配套的还有资源纪律。e2e 测试拥有自己的资源，在 `afterEach` 里 dispose，失败、重试、超时都要走到。共享 fixture 放普通的 `tests/harness.ts`，不放另一个 `*.e2e.ts`，因为 import 一个 spec 会重新注册它的 describe 块并复制真实 API 调用。
 
-这意味着性能测试不是 CI 门禁，是开发者手动运行的诊断工具。它告诉你"这个变更有没有让大场景变慢"，但不阻塞合并。
+## 快照的归属和复用
 
-### 测什么：高基数场景
+每个非平凡的模型、协议或人类可见的变更，要求在同一个 PR 里通过 runnable example 的 snapshot suite 加或更新一个无 key 场景。包测试、e2e 断言、mock 组合、PR 描述，都不替代组装后的 transcript。
 
-测试名称是"complex workspace and history"，构造的是极端数据量：
+为什么 transcript 级的钉住不可替代。一个 e2e 断言验证的是你想到要验的东西，一个快照钉住的是你没想到要验的一切。system prompt 的组装顺序、工具 schema 的字段形态、事件流的先后、日志的持久化形状，全在 diff 里。变更把某个 prompt section 弄丢了，断言可能碰巧没盯它，快照一定会红。代价是快照的红噪音更大，一次无害的措辞调整也会触发 diff，所以规则同时要求每个 diff 人审、fixture 用 tokenize 和分层把爆炸半径压到最小。用审阅成本换盲区覆盖，这是快照层的账。
 
-- 1000 个侧边栏会话（`SIDEBAR_SESSION_COUNT = 1000`）
-- 500 轮的长历史会话（`LONG_HISTORY_TURNS = 500`）
-- 每 10 轮一次工具调用，每次 10 个工具，总共 500 个工具调用
-- 2100 行轨迹面板（`EXPECTED_TRAJECTORY_ROWS = 2100`）
-- 默认历史窗口 24 轮（`DEFAULT_HISTORY_TURNS = 24`）
+不同 surface 的快照各有归属：ACP 场景在 `examples/<name>/tests/snapshots/`，headless 后端场景归 `examples/headless-agent` 的 canonical-event JSONL，交互终端旅程在 `apps/cli/tests/snapshots/`，浏览器渲染在 `apps/web/tests/snapshots/`。归属清晰的价值在 blast radius：一个 surface 的变更只动自己的快照目录。
 
-这不是典型的使用场景，这是压力测试的意图：如果渲染在 1000 个会话或 500 轮历史下不崩，那 20 个会话和 50 轮历史大概率也没问题。
+两个 SDK 必须同步更新，TypeScript 侧的 `examples/jsonrpc-agent/tests/snapshots/` 和 Python 侧的 `scripts/snapshots/python-sdk-single-exe/`，后者只由 python-runtime 的 CI job 跑。协议是两份实现共有的资产，快照也要两头钉。
 
-构造方式是用合成的 session log fixture：程序化生成 session 事件（user/message、assistant/message、tool/call、tool/result、turn/start、turn/end、request/header），序列化成 JSONL，seed 到 Web scaffold 里。这样测试是完全确定性的，不依赖真实模型。
+fixture 设计里有个漂亮的复用模式：一个叫 `text-turn` 的 ACP 场景钉住完整的 system prompt 和工具 schema 内容，其他 fixture 把它 tokenize 掉。一个 header 改动只影响一个 fixture，不需要更新几十个。快照数量随场景增长时，这种分层是维护成本的分水岭。
 
-### 测量什么：Chromium 级别指标
+fixture 的保留策略也定死了：header 和 payload 保留，body 里的时间和序号信封省略，回放时合成。旧布局由 `scripts/migrate-packed-session-fixtures.ts` 迁移，不让历史 fixture 变成一次性负债。
 
-测试通过 Playwright 的 CDP（Chrome DevTools Protocol）session 采集 Chromium 性能指标。每次操作前后各采一组，算 delta。
+## HMR 安全测试
 
-指标分三类：时间类，挂钟时间（`wallMs`）、浏览器 task 时间、JS 执行、布局、样式重算、DevTools 协议时间；增量类，DOM 节点变化、事件监听器变化、堆内存变化；存量类，总 DOM 节点数、总堆内存。一次操作花了多少时间在 JS、多少在布局、多少在样式重算，增加了多少 DOM 节点和堆内存，一目了然。
+每个注册表带一个 HMR 安全测试，做法是销毁贡献 fiber、断言清理。这件事在 dsh 里的分量比在普通项目里重，因为全插件化是它的核心卖点：注册是可逆副作用不是口号，是每个 registry 上都跑着的运行时断言。
 
-操作级别的测量覆盖：
+如果 HMR 后旧实例的注册没清理，新旧实例的注册会冲突，而冲突的表现是"同一个服务有两个来源"，这类 bug 在运行期极难定位。把清理检查放进每条 lane 都跑的 unit 层，等于把插件化的核心承诺变成了测试资产。
 
-- 启动到就绪时间、first contentful paint
-- 侧边栏展开（1000 个会话）
-- 内容搜索
-- 打开长历史
-- 冷轨迹渲染（首次渲染 2100 行）
-- 折叠 turn
-- 轨迹搜索
-- 历史分页（load earlier）
-- 热轨迹、热对话渲染（分页后再切回来）
+## 性能压测：一条不设门禁的 lane
 
-### 不做时间断言：宿主速度不是正确性契约
+功能测试回答行为对不对，性能测试回答扛不扛得住。两个问题的失败模式不同，所以性能压测独立成 lane，落在 `apps/web/tests/complex-history.perf.ts`，通过 `vitest.web.perf.config.ts` 运行，package.json 里对应 `test:web:perf` 和 `test:web:perf:built` 两个入口，后者自带构建步骤。它不在 CI 门禁里，是开发者手动跑的诊断工具。
 
-这是整个性能测试最重要的设计决策，写在文件第一行注释里：
+### 测的是高基数场景
 
-> It reports measurements without timing assertions because host speed is not a correctness contract.
+测试构造的是极端数据量，常量写在文件头：1000 个侧边栏会话，一个 500 轮的长历史会话，每 10 轮一次工具调用、每次 10 个工具共 500 次调用，轨迹面板 2100 行，默认历史窗口 24 轮。还有一个 8 轮的对照会话和一个 100 轮的 soak 会话。
 
-翻译过来：**它报告测量值但不做时间断言，因为宿主速度不是正确性契约。**
+构造方式是合成 session log：程序化生成会话事件，序列化成 JSONL，seed 到 Web scaffold。不依赖真实模型，回放 override 写进临时目录，流式节奏固定 8 毫秒一个增量。这个选择是后面一切可比性的前提。
 
-什么意思？如果你写 `expect(measurement.wallMs).toBeLessThan(500)`，这个断言在你的快机器上过了，在 CI 的慢机器上可能挂，反过来也一样。时间断言把机器性能混进了正确性判断。
+### 采集什么
 
-`dsh` 的做法是只做结构断言，回答"数量对不对"：
+指标通过 Playwright 的 CDP session 采集，操作前后各采一组算 delta。时间类：挂钟、浏览器 task、JS 执行、布局、样式重算、DevTools 协议耗时。增量类：DOM 节点、事件监听器、堆内存。存量类：总节点、总堆。采保留状态前强制 GC，把浮动对象清出计量。
 
-- `expect(sidebar.value).toBe(SIDEBAR_SESSION_COUNT + 2)`：侧边栏展开了全部 1000 个会话加两个结构性条目。
-- `expect(opened.value).toBe(DEFAULT_HISTORY_TURNS)`：打开长历史时初始渲染了 24 轮。
-- `expect(coldTrajectory.value).toBe(EXPECTED_TRAJECTORY_ROWS)`：冷轨迹渲染了全部 2100 行。
-- `expect(warmConversation.value).toBe(LONG_HISTORY_TURNS)`：分页加载后对话窗口有全部 500 轮。
+测量覆盖的操作是完整的一段用户旅程：启动到就绪和首次内容绘制、侧边栏展开、内容搜索、打开长历史、冷轨迹渲染 2100 行、折叠 turn、轨迹搜索、历史分页、分页后回切的热轨迹和热对话。
 
-时间数据通过 `console.info` 打印为 JSON：每条结果以 `WEB_PERF_RESULT` 前缀开头，后接两空格缩进的对象。开发者手动跑这个测试，看输出的 JSON，人肉判断"这次比上次慢了"或"堆内存涨了"。
+### 不做时间断言
 
-### 防止基数缩水
+整个文件最重要的设计决策写在注释里：报告测量值但不做时间断言，因为宿主速度不是正确性契约。
 
-"基数缩水"是性能优化里一个隐蔽的 bug 类：你做了一个"优化"让渲染变快了，但优化方式是少渲染了一些东西。功能测试可能不抓这种 bug（可见的行为没变），但用户的体验变了（侧边栏少了几百个会话，或者轨迹少了行）。结构断言防的就是它，靠两个机制。
+一个 `expect(wallMs).toBeLessThan(500)` 在快机器上过，在慢 runner 上挂，时间断言把机器性能混进正确性判断，flaky 是必然结局。dsh 的做法是结构断言只答数量对不对：侧边栏展开 1002 个条目，长历史初始 24 轮、分页到底 500 轮，冷热轨迹都是 2100 行，折叠后少于 2100，轨迹搜索少于 20 行。每个持续轮次还要断言持久化事件数等于增量数加工具附加数、工具结果非错且含标记、用户消息和 prompt 逐字相等，tripwire 警告和页面错误都必须是空数组。
 
-一是精确的行数断言。不是 `expect(count).toBeGreaterThan(0)`，而是 `expect(count).toBe(EXPECTED_TRAJECTORY_ROWS)` 这样的精确值。
+时间数据通过 `console.info` 以 `WEB_PERF_RESULT` 前缀打成 JSON，含每窗口的平均值和 p95，人来看趋势。
 
-二是 `stableCount` 辅助函数。它不读一次 count 就断言，而是循环读：每 50 毫秒读一次当前计数，连续 4 次读到相同且满足判断函数的值才返回，默认 60 秒超时。这防止异步渲染导致的暂时性计数误判。
+### 结构断言防的是基数缩水
 
-### soak 测试：持续对话的保留状态
+基数缩水是性能优化里一个隐蔽的 bug 类：一个优化让渲染变快了，方式是少渲染了一些东西。可见行为没变，功能测试不抓，但用户的侧边栏少了几百个会话。精确行数断言防的就是它，配套的 `stableCount` 辅助函数每 50 毫秒读一次计数，连续 4 次读到相同且满足判断的值才返回，默认 60 秒超时，防异步渲染的暂时性计数骗过断言。
 
-性能测试不只是"打开大历史"。它还有一个 soak 场景：在已有 500 轮历史的基础上，继续发 100 轮对话（`SOAK_TURNS = 100`），每 10 轮检查一次保留的浏览器状态。
+### soak：持续使用的保留账
 
-每次检查采集 `retainedBrowserState`，四个字段：DOM 元素数、DOM 节点数、事件监听器数、堆内存 MB。这些数据回答的问题是：随着对话轮数增加，浏览器保留了什么。如果每轮对话都增加 10 个 DOM 元素和 5MB 堆内存，100 轮后就是 1000 个元素和 500MB，这是内存泄漏的信号。
+高基数之外还有两个对照场景把"持续使用"单独拎出来测：一个从默认 24 轮窗口恢复后继续 8 轮对话，一个从完全展开的 500 轮历史继续 8 轮。两者的工具节奏、增量数都比照 soak 的口径缩小（8 轮里 2 个工具轮、24 个增量），为的是把"从不同起点继续对话"的渲染成本放在同一把尺子下。起点不同、路径不同，保留的账目却应该同样干净，这是对照场景存在的理由。
 
-soak 测试也测量每轮的性能指标（click 到 user echo 的时间、click 到 first chunk 的时间、first chunk 到 settled 的时间、mutation batches/records），并按 10 轮窗口汇总平均值和 p95。这些数据回答另一个问题：长对话是否变得越来越慢。如果第 1 轮和第 100 轮的响应时间差很多，说明有什么东西在积累。
+soak 场景在 500 轮历史上再发 100 轮对话，每 10 轮一个检查点，采四项保留状态：DOM 元素数、节点数、监听器数、堆内存。这些数回答的是随轮数增长浏览器留下了什么，每轮涨 10 个元素的话 100 轮后就是 1000 个，泄漏在这种账目下无处躲。每轮还测点击到用户回显、到首个 chunk、chunk 到 settled 的耗时，按窗口汇总，回答长对话是否越来越慢。soak 结束后单独测第 101 轮的发送渲染，600 轮之后端到端延迟有没有退化。
 
-### 流式渲染的探针
+两个探针把流式渲染拆到了细处。Mutation Probe 在对话内容区挂 MutationObserver，统计流式输出期间的 mutation 批次和记录数，批次越少合并越高效。User Render Probe 钩住发送按钮的点击并验证事件是 trusted 的，记录点击、消息进 DOM、实际 paint 三个时刻，给出三段延迟；超时会输出诊断转储。
 
-测试里有两个精细的探针，测量流式渲染的细节。
+### replay 是可比性的前提
 
-Mutation Probe 在对话内容区域挂一个 MutationObserver，统计流式输出期间的 mutation batches 和 records 数。这告诉你浏览器为了渲染流式输出做了多少次 DOM 变更，batches 越少越好（合并的变更更高效）。
-
-User Render Probe 测量从用户点击发送到消息出现在 DOM 再到 paint 的时间，三个时间点：`sendAt`（点击发送）、`domAt`（消息文本出现在 DOM）、`paintAt`（实际被 paint）。三个 delta：`sendToDomMs`、`domToPaintMs`、`sendToPaintMs`（端到端）。探针还验证点击是 trusted 的（`event.isTrusted`），确保不是合成事件。
-
-这个探针在 soak 测试后运行（`measurePostSoakUserRender`），回答的问题是：600 轮对话之后，发送一条消息的端到端延迟有没有退化。
-
-### 运行方式
-
-性能测试是 opt-in 的，不在 CI web gate 里。运行分两步：先 `pnpm run build:web` 构建（性能测试消费构建后的 CSS），再 `pnpm exec vitest run --config vitest.web.perf.config.ts apps/web/tests/complex-history.perf.ts` 跑测试。
-
-测试只在 replay 模式下运行（`webSnapshotMode() === 'record'` 时抛异常）。这保证了确定性：同一个 replay override 每次产出同样的模型响应，测量才有可比性。
-
-输出是一串 `WEB_PERF_RESULT` JSON，开发者自己对比历史结果判断趋势。
+测试只在 replay 模式下运行，record 模式直接抛异常。同一个回放 override 每次产出同样的模型响应，测量才有可比性。这一点把性能测试和确定性绑在一起：允许 record 的性能测试，等于允许每次测不同的输入，数据作废。清理同样是显式的，所有测试世界把 teardown 失败聚合成 AggregateError 抛出，soak 测试明确把测试失败和 teardown 失败合并而不是吞掉其一。
 
 ## 权衡与局限
 
-不做时间断言是刻意的，这意味着性能退化不会被 CI 自动抓到，要靠人看 JSON 发现。这是"宿主速度不是正确性契约"的代价：放弃了自动化性能门禁，换来跨机器的可比性。
+不做时间断言意味着性能退化不会被 CI 自动抓住，要靠人看 JSON 发现。放弃自动化性能门禁，换来的是跨机器可比和不 flaky，这笔账在团队规模小、性能问题低频时划算，规模变大后需要在两者之间找新的平衡点，比如同机基线对比。
 
-只测 Web 客户端。Host 侧（Node.js）的性能没有等价的 benchmark，agent loop 的性能、模型请求的延迟、工具执行的耗时都没有专门的性能测试。coverage gate 保证代码行跑过，但不保证跑得快。
+覆盖范围偏科。性能 lane 只测 Web 客户端，Node 侧的 agent loop、模型请求延迟、工具执行耗时没有等价 benchmark。只测高基数场景，典型场景靠"极端扛得住则典型没问题"的假设兜底。只在 Chromium 上跑，Firefox 和 Safari 的性能特征不在视野内。soak 是持续使用不是并发压力，真正的多用户压测不在范围。
 
-只测高基数场景。典型使用场景（10 个会话、20 轮对话）没有性能测试，假设是"极端场景扛得住，典型场景没问题"。这个假设大部分时候成立，但不总是。
-
-Chromium 专属。用 CDP 采集指标意味着只在 Chromium 上跑，Firefox 和 Safari 的性能特征不同，这个测试不覆盖。
-
-soak 不是真压测。100 轮对话是持续使用，不是并发压力，真正的压测（多用户、高并发请求）不在范围。
+per-file 100% 覆盖率对贡献者是持续的压力，每一行新代码都要有测试触达。它的回报是把死代码问题变成门禁信号，但代价是偶尔要为覆盖率写防御性分支的测试，这类测试的价值密度不高。
 
 ## 结论
 
-这套测试体系的骨架是分层：unit 管边缘情况，coverage gate 管行覆盖，real-API e2e 管真模型，snapshot 管组装后的转录，web snapshot 管浏览器呈现，性能 lane 管高基数场景。贯穿的原则有三条：不吝啬真 API 测试，验证世界不验证自述，mock 只留在昂贵或不确定的边界。性能压测不做时间断言，因为宿主速度不是正确性契约；结构断言保住基数不缩水，时间数据留给开发者看趋势。
+这套体系的骨架是分层且各答一个问题：unit 管边缘情况，coverage gate 管行覆盖和死代码，real-API e2e 管真模型，snapshot 管组装后的转录，web snapshot 管浏览器呈现。贯穿的纪律有四条：不吝啬真 API 测试，mock 只留在昂贵或不确定的边界，验证世界不验证自述，测真实入口路径和发布产物。postmortem 0001 是这套纪律的来源之一，178 个绿测试加 100% 覆盖挡不住一行多余的 default 导出，因为测试路径绕过了 Loader。性能压测单立一条手动 lane，不做时间断言因为宿主速度不是正确性契约，结构断言保住基数不缩水，replay 保住测量可比。要带走的一句话：覆盖率证明代码行跑过，不证明功能按发布的样子工作。
 
 ## 延伸阅读
 
 - [Testing Policy 全文](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/testing.md)
 - [Development Guide](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/development.md)
-- [Defensive Patterns（测试侧对应模式）](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/defensive-patterns.md)
 - [Postmortem 0001: ACP Default Export](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/postmortem/0001-acp-default-export-drops-inject.md)
+- [Defensive Patterns（测试侧对应模式）](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/defensive-patterns.md)
 - [Real-API e2e Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/testing/2026-06-19-real-api-e2e-ci.md)
 - [Web Performance Test 源码](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/web/tests/complex-history.perf.ts)
-- [vitest.web.perf.config.ts](https://github.com/deepseek-ai/deepseek-harness/blob/master/vitest.web.perf.config.ts)
 - [Web GUI Browser E2E Lane Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md)
 
 上一篇：[错误处理与容错哲学：dsh 这个 harness 怎么不崩](./42-error-handling-fault-tolerance-philosophy.md)

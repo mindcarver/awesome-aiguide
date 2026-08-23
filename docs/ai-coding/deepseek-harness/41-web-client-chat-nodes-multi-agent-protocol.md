@@ -1,124 +1,149 @@
 # dsh Web 客户端：Chat Nodes 与多 agent 协议
 
-> `dsh` 的 Web 客户端是 Host（Node.js）和 Client（浏览器）两半插件图，中间用一条 wire 协议（`window.__DSH_BOOT__`）和一个 HTTP carrier 连起来，两半各自有完整的插件生命周期，不是"后端渲染前端"的单体。
-> 这一篇拆 Client Modules 怎么扫描和组装浏览器插件、Web Server 怎么做 HTTP carrier、HMR 怎么热更新、以及 Host-Client 之间的 RPC 协议。
+> `dsh` 的 Web 客户端是两半各自完整的 Cordis 插件图：Host 半跑在 Node.js 进程里拥有全部 agent 能力，Client 半跑在浏览器里拥有全部渲染逻辑，中间靠一条 boot 时注入的图（`window.__DSH_BOOT__`）和一个不知道任何 harness 概念的 HTTP carrier 连接。浏览器怎么知道加载哪些插件、代码变更怎么保持一致、两半之间怎么通话，是三个独立的设计问题，各有各的答案：内容寻址的 rev 查询参数、四象限的消息协议、按调用解析的类型安全远程调用。
+> 这一篇顺着一次页面加载和一次远程调用走完全程：boot graph 的形状与顺序、Client Modules 的增量扫描、Web Server 的路由纪律、RPC 协议的消息规则、断线之后的折叠重建，最后看 Chat Nodes 和多 agent 场景怎么落在这个架构上。
 
-## 两半插件图：Host 和 Client
+## 不是后端渲染前端，是两半插件图
 
-理解 `dsh` Web 客户端的第一件事：它不是传统的"后端渲染前端"，而是两半独立的插件图，各自有完整的生命周期。
+传统的 Web 架构里，服务器渲染 HTML，浏览器只是显示。`dsh` 的 Web 客户端不走这条路：Host 和 Client 是两个独立的插件图，各自有完整的 Cordis 生命周期。
 
-Host 半跑在 Node.js 进程里：所有 agent 能力、模型适配器、工具、会话、沙箱、审批，这是 `dsh` 的主体，跑在服务器或本地进程里。Client 半跑在浏览器里：UI 组件、Conversation Node 渲染器、交互逻辑，是一组独立的 Cordis 插件，在浏览器里加载和激活。
+Host 半跑在 Node.js 进程里，是 `dsh` 的主体：模型适配器、工具、会话、沙箱、审批，全部在服务器或本地进程里激活。Client 半跑在浏览器里，是一组真正的 Cordis 插件：UI 组件、Conversation Node 的定义和渲染器、交互逻辑，在浏览器里加载、激活、销毁。Host 不产出 HTML 模板，Client 不直接调用 agent 能力，中间隔着 API gateway 和消息协议。
 
-两半通过 HTTP（Web Server 提供的 carrier）和一条 wire 协议连接。Host 不渲染 HTML 模板，Client 不直接调 agent 能力，中间隔着一个 API gateway。
+为什么拆这么狠？一个工程上的硬约束逼出了这个形状。两半的 TypeScript 各自 declaration-merge 了同一个 Context 接口 key 下的不同 service，如果把两边的源码放进同一个编译单元，类型碰撞会让 `ts.Program` 直接报错。所以仓库维护两个 aggregate（`tsconfig.host.json` 和 `tsconfig.client.json`），两个构建永不进入同一个 program。这不是组织洁癖，是 Context 合并语义的物理边界。
 
-这种分层是刻意的。Host 的 TypeScript 项目和 Client 的 TypeScript 项目是两个独立的 aggregate（`tsconfig.host.json` 和 `tsconfig.client.json`），因为两边在同一个 Context 接口 key 下 declaration-merge 了不同的 service，一个 program 同时看到两边的 merge 会报碰撞。这个碰撞只存在于 `ts.Program` 内部，模块解析不会触发它。
+分层再往下看是四层：front 层放协议定义和 fetch 抽象，Node 和浏览器都能 import；assembly 层决定哪些插件挂载、带什么默认值；carrier 层只有 HTTP，对工作区零依赖；最上面是浏览器侧的插件树。方向纪律是单向的：client 包永不 import host runtime，webserver 不依赖 runtime，它拿到的是一个运行时注入的关系而不是包依赖。这个纪律的回报后面会看到：Electron 和 Python SDK 各自换掉运输层，不动上层。
 
-## Client Modules：浏览器插件表
+## 浏览器第一眼看到的东西：boot graph
 
-`ctx.clientModules`（`ClientModuleRegistry`）是连接两半的关键服务，做四件事：
+浏览器打开页面，Host 返回的 index.html 的 head 里第一个 script 不是应用代码，是一份清单：`window.__DSH_BOOT__` 指向一个 boot graph。
 
-1. 扫描：增量扫描 Host Loader 的条目，找出声明了 `dsh.client` 的包。
-2. 组装：把扫描到的条目组装成 `WebBootGraph`。
-3. 服务：把每个包的浏览器 bundle 服务在 `/plugins/<id>/client.js`。
-4. 注入：tap index 渲染，把 boot manifest 注入 HTML。
+图的每一行描述一个 client 插件包：包名、bundle 地址（`/plugins/<id>/client.js?rev=<rev>`）、内容哈希 rev，外加三块可选信息。`inject` 是信息性的依赖边，给人看的不参与调度。`immediately` 把这行标进第一梯队：module-face boot 期间就预取并执行，但只注册工厂不做别的事。`external` 最有意思，它声明这个包运行时要 require 一批非基线的说明符，也就是其他动态包的导出。
 
-一个包通过在 `package.json` 里声明 `dsh.client`（`platform: 'web'`，可选 `inject` 依赖边，可选 `immediately` 预取标记）加入这个表，并在 `exports["./client"]` 导出构建后的 bundle。
+外层的图自己带一个 rev 和一份按序排列的行列表。顺序在这里是语义，不是摆设。浏览器半的模块表是懒执行的 CommonJS 风格，`require` 是同步的：一个包的代码到达并执行时，如果它 require 另一个动态包，那个包的代码必须已经在浏览器里。所以图按模块图顺序排：被 external 需要的包排在需要它的包前面。这个顺序只管代码到达，与 Cordis 的激活顺序无关，激活时机归 fiber 服务管，两件事不混。
 
-### 增量扫描
+页面解析 shell 先于 boot 执行，一个没有有效 manifest 的页面直接不能启动：浏览器侧的 parser 在缺失或畸形的图上大声抛异常，不降级、不空白屏装死。清单里所有插件控制的字符串都过了一遍 `<` 转义，任何包名、任何 URL 都逃不出 script 元素。这份图是 Host 和 Client 之间的单一真相源，两半产出同样形状的行，不存在第二种格式。
 
-扫描是按包增量的，没有全量重扫代码路径。每次 cordis 的 `internal/plugin` 事件（fiber 构造或销毁）标记那个 fiber 的条目名为 dirty，一个 microtask flush 把每个 dirty 名字和 live loader 条目对账。
+## 一致性锚是 rev，不是 HTTP 缓存
 
-激活 pass 用所有当前条目种子同一个 dirty set 并同步 flush，所以首次扫描和稳态共享一个实现，只是失败姿态相反。激活时，一个畸形声明或缺失 bundle 聚合成一个 `AggregateError` 列出所有坏包：fiber 失败，boot 的 fail-loud sweep 报告它。稳态时，一个坏包只 warn，不影响其他包。
+bundle 怎么服务才能保证浏览器永远拿到最新代码？直觉答案是 HTTP 缓存加失效策略。`dsh` 的答案相反：bundle 全部带 `no-cache` 头服务，HTTP 缓存被明确排除在一致性机制之外。
 
-包元数据（包括"不是 client 包"的否定判定）按名缓存且永不过期：插件集变更在重启时生效。
+锚是 rev 查询参数。每一行的 rev 是 bundle 的内容哈希，搭在 URL 上；图的 rev 哈希所有组合后的行，任何一行变了，图的 rev 跟着变。内容一变 URL 就变，浏览器不存在"拿着旧地址拿到新内容"的可能。这比缓存协议可靠得多：缓存失效经过多层代理和启发式，是概率性的；内容寻址的 URL 是确定性的。哈希在这里同时承担版本号和身份证两个角色，改动不需要协商失效，因为地址本身就是版本。
 
-## wire 协议：window.__DSH_BOOT__
+bundle 的服务路由有自己的守门规则：只有 GET 和 HEAD 被接受，其他方法返回 405；未知的包 id 或不可读（通常是没构建）的 bundle 返回 404。后面这条值得停一下：一个没构建出来的包，不会以一个"成功的 JavaScript 响应"出现在浏览器面前，坏的东西在门口就报 404，不会变成一行执行到一半才炸的脚本。
 
-浏览器怎么知道要加载哪些插件？通过 Host 注入的 boot graph。
+## Client Modules：增量扫描与两种失败姿态
 
-Host 把 `WebBootGraph` 作为 `<head>` 里的第一个 script 注入，赋给 `window.__DSH_BOOT__`。图里每个条目（`WebBootEntry`）描述一个包：包名 `id`、bundle endpoint `url`、内容哈希 `rev`，外加两条可选信息，`inject` 依赖边（信息性）和 `immediately` 预取标记。外层的 `WebBootGraph` 自己带一个 `rev` 和一份 `entries` 列表。
+`ctx.clientModules` 是 Node 半的登记处，负责把"哪些包是 client 包"变成上面那张图。一个包通过 `package.json` 里声明 `dsh.client`（平台、可选的 inject 和 immediately 标记）加入，并在 `exports["./client"]` 导出构建产物。
 
-rev 是这套协议的缓存一致性锚。每行的 rev 是 bundle 的内容哈希，搭在 URL 上做 cache-busting（`/plugins/<id>/client.js?rev=<rev>`）；图的 rev 哈希所有组合的行，任何一行变化都改变它。`immediately` 标记的行在 module-face boot 期间预取和执行（只注册 factory）；lazy 行在首次 import 时获取。
+扫描是按包增量的，仓库里没有全量重扫的代码路径。每次 Cordis 的 `internal/plugin` 事件（fiber 构造或销毁）把那个 fiber 的条目名标记为脏，一个 microtask flush 把脏名字和 live loader 条目对账。解析锚定在配置树的 baseUrl 上，也就是 cordis.yml 所在目录，这个锚没设置时构造直接抛错，不猜。
 
-`<` 被转义，所以插件控制的字符串不能逃出 script 元素。一个没有有效 manifest 的页面无法 boot，浏览器侧 parser 在缺失或畸形的 graph 上大声抛异常。
+首次扫描和稳态走的是同一个实现：激活那一趟把所有当前条目种进同一个脏集合同步 flush。但失败姿态刻意相反。激活时，一个畸形声明或缺失 bundle 会和其他坏包聚合成一个 `AggregateError` 整体报出，fiber 失败，boot 的 fail-loud sweep 接管；稳态时，同一个坏包只 warn，不许毒害邻居。同一个扫描器，启动时宁死不屈，运行时得过且过，因为启动时的坏配置值得拦住整个进程，运行时的一个坏包不该拖垮其他所有 UI。
 
-这个 wire 协议是 Host 和 Client 之间的单一真相源。Host 半和 Client 半产出同样形状的 `WebBootEntry`，不存在第二种格式。
+包的元数据按名缓存且永不过期，包括"这不是 client 包"的否定判定。插件集合的变更在重启时生效，这是用重启换确定性。fiber 重启则复用它的行和 rev，一点不动，bundle 内容的变化只有一条路进图：`rebuilt(id)` 重新哈希，只有 rev 真变了才重组图并通知。两条通知路径，逐 bundle 的 `onRebuilt` 和拉模型的 `onGraphChanged`，都隔离监听器异常，一个抛错的订阅者跳不过后面的订阅者。
 
-## Web Server：HTTP carrier
+## Web Server：一个不认识 harness 的 HTTP carrier
 
-`ctx.webServer`（`dsh-host-webserver`）是浏览器的 HTTP carrier。它是一个单一的 `node:http` 插件，提供命名路由注册表、index.html 转换回调和单个 fallback handler。
+`ctx.webServer` 是浏览器侧所有 HTTP 的落点，它刻意薄到极点：一个 `node:http` 插件，提供命名路由注册表、index.html 转换回调和恰好一个 fallback 座位。它不知道任何 harness 概念，不在 agent loop 里，也不是能力接缝。`/api` 桥、插件 bundle、HMR 事件流，每个功能路由都由别的插件注册，Web Server 只提供运输。
 
-**它不知道任何 harness 概念。** 每个功能路由（`/api` bridge、plugin bundles、HMR event stream）都由另一个插件注册，Web Server 只提供 carrier。
+路由模型是一条纪律。路径分 exact 和 prefix 两类，匹配顺序固定：先查 exact 表，再取最长匹配的 prefix，最后落到 fallback。注册顺序不携带任何请求语义，因为命名路由被组合成互不相交的：两个插件声明了重叠的路径模式，抛错，这是组合层的配置错误，不是运行时谁先谁后的运气。这和按注册顺序匹配的常见做法是两种世界观，后者的行为取决于插件加载时序，而时序不是产品语义。
 
-路由匹配顺序固定：exact 表先，然后最长匹配的 prefix，然后注册的 fallback。注册顺序不影响请求，因为命名路由被组合成不相交的。
+fallback 只有一个座位，第二个注册者抛错。座位被认领之前，未匹配的请求得到 404。出厂的 Web 组合把这个座位给了 SPA 静态文件服务，语义锁死：非 GET/HEAD 返 405，dist root 之外的路径遍历返 403，存在的文件直接服务，缺失或非文件的目标给空的 404，不认识的扩展名按 octet-stream 发。SPA 路由的落点是 index.html 返 200。
 
-`Config` 很小：`host` 只接受 `127.0.0.1`（默认，loopback）和 `0.0.0.0`（刻意的网络暴露），`port` 传 `0` 请求 OS 分配。没有 TLS、认证或 origin policy，所以非 loopback 绑定会把服务器暴露给那个网络。
+index 渲染是两层的。结构化的注入行通过一次 `webserver/index-inject` 事件收集，每次调用都是新行，订阅者读到的是 emit 时刻的活状态；Client Modules 就是在这里回答 boot manifest 行的。原始的 `tapIndex` HTML 到 HTML 变换是逃生舱，按注册顺序应用，给结构化行表达不了的 markup 用。逃生舱排第二位，是姿态也是顺序。
 
-`tapIndex(transform)` 注册一个纯 html-to-html 转换，应用于每个 index 响应（`/` 和每个 SPA fallback），按注册顺序执行。Client Modules 用它注入 boot manifest。
+配置小到一眼看完。`host` 只接受两个值：`127.0.0.1`（默认，loopback）和 `0.0.0.0`（刻意的网络暴露）。`port` 传 0 让操作系统分配，运行时能读到实际监听的端口。没有 TLS、没有认证、没有 origin policy，这三样缺失意味着 `0.0.0.0` 绑定是把服务器交给你所在的网络。安全姿态是 loopback 默认加显式豁免，不是内置一套半吊子的鉴权。出错的行为也定了性：一个抛错的 handler（畸形转义、客户端中途断开）被 warn 加 400 回答，headers 已发出的情况直接毁掉 socket，进程永不退出。监听失败（比如端口占用）则拒绝初始化，失败的 fiber 在 boot 时报告。销毁时 `close()` 配上强制关闭所有连接，因为 SSE 型的 handler 自己不会结束，不强关的话拆卸会挂死。
 
-shipped Web 组合用 `dsh-host-frontend-static` 占据 fallback 座位：SPA dist server，non-GET/HEAD 返 405，dist root 外的遍历返 403，任何 miss fallback 到 `index.html` 返 200（SPA routing）。
+## 两半之间的消息协议：四象限，不是 JSON-RPC
 
-## HMR：开发时的热更新
+浏览器怎么调 Host 的能力？先把一个常见误会清掉：这条通道不是 JSON-RPC。设计笔记明确否决了复用 JSON-RPC 2.0，理由有两条：错误码在通用协议里会降级，契约会在两个副本之间漂移。
 
-开发时，`dsh-client-hmr` 是 registry 的 watch driver。
+`dsh` 用的是一个四象限消息协议。两个轴：谁发起（客户端或服务器），消息性质（请求或响应）。组合出四种消息：客户端请求走 `POST /api/<method>`，服务器响应对应它的 HTTP 200 体；服务器请求走 WebSocket 推过来，客户端响应回传到 `POST /api/respond`。整个消息集是一个四成员的判别联合，加一个新成员就是加一个具名分支。
 
-它的 Node 半从同步捕获的基线 stat-poll 每个图行的 bundle。检测到变化时调用 `rebuilt(id)`，通过 `onGraphChanged` 重新同步 watch set，并通过 SSE 把 rev 变更广播到浏览器半。
+rpcId 是协议的铸造纪律：谁发起谁铸造，响应回显、永不铸造，业务代码任何时候不铸造 id。服务器的请求精确分两类。可应答的帧（审批请求、提问）带稳定的 rpcId，重放时复用同一个 id；纯推送的帧每次用新的。这条区分直接决定了断线重放的语义，后面会用到。
 
-`rebuilt(id)` 是 bundle 内容到达图的唯一入口：它重新哈希文件，只有真正的 rev 变化才重组图并通知。`onRebuilt` 在每个变化的 bundle 时触发，带新 rev；`onGraphChanged` 在任何重组图的 flush 后触发，是 pull 模型，监听器重新读 `graph()`。生产图完全省略 HMR 行，module host 自己从不 watch 文件。
+错误模型是一张映射表：每个错误码一行，`details` 字段必填，新增一个错误码等于加一行映射加一个 schema 分支，两处不改完编译不过。传输层失败是 carrier 异常，永远不混进业务错误，两套故障走两套处理路径。方法签名是唯一事实源：请求和响应的类型全部从接口方法签名派生，禁止手写一份同名的类型副本，第二份名字就是第二个可以漂移的事实。
 
-效果是开发时改一个 client 插件的代码，浏览器自动拿到新 bundle，不用手动刷新。背后是 stat-poll（不是 fs.watch，避免跨平台不一致）加 SSE 推送。
+取消有明确的位置： unary 调用默认挂一个 30 秒的超时信号。用户步调的操作（选目录、执行命令）不带这个默认，因为给长 handler 上硬超时会杀死合法的慢操作，取消信号的主动权在调用方手里。
 
-## Host-Client RPC 协议
+协议的能力边界也钉死了：Remote 严格是一次请求一次结果的一元调用。会话事件、分页、增量折叠、实体子流，这些流式需求走独立的数据协议，禁止伪装成 Remote 方法混进调用描述符，哪怕它们复用同一条 Connection。混进去的后果是调用语义被稀释，超时、取消、错误路由都要为"永不返回的调用"开例外。线上的验证是两级的：信封先过一遍 parse，载荷再过一遍，两层各有各的 schema。JSON 线上还有一个被显式承认的不完美：缺省和 undefined 在线上无法区分，`Wire<T>` 类型为此做了深层的可选放宽，这是把 TypeScript 的严格可选性和 JSON 的物理现实对齐的代价，不是疏忽。
 
-浏览器怎么调 Host 的能力？通过 API gateway 和 `@Remote` 装饰器。
+carrier 侧的抽象收得很紧。所有协议不变量住在 `AbstractApiClient` 里，平台差异只有两个切面：传输的 `doFetch` 和可覆写的 `onEnvelope` 观察钩子。于是同一套协议有四个实现：浏览器用 fetch 加 WebSocket，Electron 走 IPC，测试用 Fixture（一个自洽的假服务器），还有一个进程内实现跑完整的真协议但不占端口。平台差异是继承切面不是构造参数，这个选择否决的是工厂函数式的配置化：配置项堆出来的平台分支很快会烂在参数表里。观察钩子是实例私有的 microtask 批缓冲，监听器抛错被隔离。
 
-业务 service 在 Host 上用 `@Remote` 或 `@RemoteScope` 声明可调用方法。Host 构建生成 Host-for-Client 类型和 runtime 贡献，Client 的 `api-remotes` 组合加载这些贡献，在 `ctx.remote` 和 scoped `agentCtx.remote` 命名空间下暴露。
+## 一次远程调用的走查
 
-这套机制是类型安全的：Host 声明的方法签名通过构建时生成的类型到达 Client，Client 调用时 TypeScript 检查参数类型。运行时通过 `/api` bridge 的 JSON-RPC 消息通信。
+看一个具体调用怎么过河。业务 service 在 Host 上用 `@Remote` 或 `@RemoteScope` 声明可调用方法，没标记的方法进不了生成的客户端类型，也调不到。
 
-`api/remotes` 是仓库里唯一一个 split Host 和 Client tsconfig 的包。它的 Host 条目必须参与 Host Typert 图，而 Client 条目 import 的 `/remote` 声明需要 Host tsdown 先生成。这个 split 是刻意的，但官方文档明确说不要把这种结构复制到其他包。
+客户端代码写 `await ctx.remote.goals.create(agentId, { objective: 'ship it' })`。这个调用走 Connection 的 `/api` 路由，变成 `connection.rpc.call('/api', 'goals/create', { args }, signal)`，HTTP carrier 把它映射成 `POST /api/goals/create`，载荷里只有一个具名的 args 对象。注意这是自定义信封，不是 JSON-RPC 的方法参数数组。
 
-非浏览器场景不走这条路。Electron 通过 `file://` 加载构建文件，通过 IPC bridge 发 fetch 请求，不用 Web Server。Python SDK 通过 JSON-RPC stdio 和 runtime 通信，不用 HTTP。
+Host 侧，gateway 在这次调用里现解析描述符和活服务，不缓存业务对象。先做统一的信任检查，再校验 args 字段与描述符严格一致（多了少了都拒），用 codec 验证线上值，然后解析身份。身份解析是这套协议里最见功底的部分：复杂 Host 对象不过线。一个 `Agent` 参数在线上叫 `agentId`，是一个普通字符串；gateway 在调用前通过注册的 lookup provider 把它解析回 Host 的活对象。没注册 provider，调用以 `lookup-unavailable` 失败；配置可以按 key 覆盖解析策略而不动参数名和线字段。`agent` 和 `session` 两个 key 的解析器有完整语义：复用活的 Agent，冷的 session 自动恢复并去重并发恢复请求，子 agent 路由拥有的身份被拒绝。然后才真正调到业务方法，返回值再过一遍验证，写进响应。
 
-## Chat Nodes 在这个架构里的位置
+类型怎么到的浏览器？构建期。Host 构建先跑，Typert 生成器在这个阶段以 Host aggregate 为唯一的 program 种子运行，产出 strict 描述符、schema、运行时 codec 和客户端声明合并；Client 构建消费这些产物，不再启动生成器。两个构建永不进同一个 program，这正是前面两个 aggregate 的用途。类型安全是端到端的：Host 方法签名改了，Client 侧的 TypeScript 在下一次构建后报错，不是运行时才炸。
 
-Conversation Node 是 Client 半的插件。一个 Node 的 Definition 和 React renderer 都在 client 包里，通过 `ctx.conversationEvents.register()` 和 `ctx.slots.register()` 注册到 Client 的插件图。
+开发态有一条弱化通道。用 tsx 直跑 Host 时跳过 Typert 编译器插件，装饰器把方法名和调用模式记进一个模块私有的 WeakMap，gateway 据此拼一个临时描述符，不用起 program。这个 SRC 通道解析参数名、套 JSON 安全检查，但没有类型、schema、可选推断。浏览器那边对应的态度是拒绝：客户端不 mount 缺 strict codec 的 SRC 描述符，类型永远来自最近一次生成的产物。开发快了，验证没松。
 
-Host 半只负责产生 session 事件，Node 的 match/start/update/buildViewNode 逻辑全在浏览器里跑。**这是两半分工的体现：Host 拥有事件真相，Client 拥有渲染逻辑。**
+## 断线之后：折叠与重建
 
-一个 client 包要贡献 Chat Node，需要三步：在 `package.json` 声明 `dsh.client`，让它进入 Client Modules 扫描；在 `exports["./client"]` 导出构建后的 bundle；在 bundle 的 `apply` 里注册 Definition 和 renderer。之后 Client Modules 把它组装进 boot graph，浏览器加载它，它注册自己的 Node 和 renderer。整个过程不需要改 Host 的任何代码。
+会话历史在这个架构里是客户端的一次折叠：服务器不物化快照，客户端把收到的事件流折成当前视图，分页边界对齐消息边界。这个选择决定了重连语义。
 
-## 多 agent 协议在这个架构里
+断线重连不是续传，是重建。协议里没有恢复游标（`since` 是个保留座位，v1 不用），重连后客户端比较两边序列号，把背隙一次性补齐，然后重新折叠整个历史。听起来重，实际上把一堆难缠的状态机干掉了：没有游标就没有游标丢失的对账，没有增量会话就没有半新半旧的视图。审批和提问是这条纪律里的精确例外：首个回答获胜，内存里的 pending 表是唯一裁判，被请求的帧在连接重开后重放，带着原来那个稳定的 rpcId，客户端不会因为断线漏掉一次审批，也不会因为重放重复应答。
 
-Web 客户端天然支持多 agent 场景。Host 可以同时持有多个 agent（root agent、subagent、后台 job），每个 agent 有独立的 session 和 scope。
+回执的语义同样精确。carrier 的回执是一个只有 `accepted` 布尔值的对象，文档明说它不是 RpcMessage，不参与消息协议。迟到的应答拿到 `not-pending`：一个答案在pending 表里找不到自己的席位，得到的是一个明确的"你晚了"，不是异常，不是静默丢弃。未知的方法在信封 parse 时就大声失败，没有 not-implemented 的兜底分支。协议没有版本协商，客户端和 Host 绑定发布，这对一个同仓构建的两半是诚实的选择，比一套永远不会用到的版本握手便宜。
 
-Client 通过 API gateway 拿到所有 agent 的状态和事件。Conversation Node 的 scope 机制让不同 agent 的对话渲染在不同的视图区域。subagent 的生命周期和 session 事件通过 `RunResult.notifications` 和 `on_notification` 到达客户端，按 wire 顺序。
+升级路径也留了口子：Connection 拥有传输、rpcId、响应信封和取消，gateway 只拥有 Remote 数据协议和业务分发。将来换 carrier（WebSocket 换成别的）不需要动描述符和客户端 API。
 
-ACP server（另有专篇）是另一种多 agent 协议入口，让外部程序通过 JSON-RPC 创建和驱动 agent。Web 客户端和 ACP server 可以共存：Web 给人用，ACP 给程序用，两者共享同一个 Host 进程和 agent 组合。
+## 开发时的热更新：HMR 的边界
+
+开发时 `dsh-client-hmr` 是 registry 的 watch driver，生产图完全省略 HMR 行，module host 自己从不 watch 文件，生产行为里没有一行文件监视代码。
+
+Node 半用 stat-poll（不是 fs.watch，避开跨平台行为差异）盯每个图行的 bundle，默认 500 毫秒一趟，基线在启动时同步捕获。检测到变化就调 `rebuilt(id)`，这是内容进图的唯一入口，前面说过它只在 rev 真变时才动图。rev 变更通过 SSE 推到浏览器半，浏览器拿到新 bundle 换上，不刷新页面。
+
+HMR 的边界要划清：它处理 bundle 内容变化，不处理 manifest 结构变化。新增一个 client 插件改变了图的行集合，这个变化要重新加载页面才能拿到，因为 boot graph 是页面加载时注入一次的。改代码不刷新、加插件要刷新，这条线在实践中很清晰。
+
+类型又是另一条线。改 Host 的 `@Remote` 方法签名，要重跑 Host 构建客户端才能看到类型变化，只有实现体的改动不需要再生成。`typecheck` 和 CI 用同一套顺序，本地能过的 CI 也能过。
+
+## 浏览器侧的插件纪律
+
+client 包不是一种东西，是三种。纯库（slots、primitives、loader 内核）没有任何插件声明，被别人 import。静态到达的包（connection、runtime、theme、i18n、HMR）不带 `dsh.client` 键，由 shell 直接打进基线。fetch 到达的插件（布局、侧栏、会话视图）才是 boot graph 的住户：双入口，Node 侧的 apply 是空的，实现在 `src/client/` 下走 `./client` 子路径。
+
+三种包之间有一条硬线：跨插件 import 值是构建错误，tsdown 的纯度门禁当场拦下。插件之间要协作，值走 Cordis 服务，不走模块图。这条线把"浏览器里的插件"和"npm 包"区分开：npm 包的依赖图是构建期的，Cordis 插件的依赖图是运行期的、可逆的，两者混起来热重载就没有干净的边界。命名上每个包带组前缀（`dsh-host-runtime`、`dsh-client-ui`），在扁平的 npm 空间里前缀就是归属声明，代价是每个包都要在 tsconfig paths 里显式登记含 `/client` 子路径的映射。
+
+## Chat Nodes 的分工与多 agent 场景
+
+Conversation Node 在这个架构里是 Client 半的插件。Node 的 Definition 和 React 渲染器都在 client 包里，通过 client 侧的注册服务挂进浏览器插件图。Host 半只负责产生 session 事件，match、start、update、buildViewNode 的逻辑全在浏览器里跑。
+
+分工一句话：Host 拥有事件真相，Client 拥有渲染逻辑。一个 client 包要贡献 Chat Node，三步：`package.json` 声明 `dsh.client` 进扫描，`exports["./client"]` 导出 bundle，bundle 的 apply 里注册 Definition 和渲染器。之后 Client Modules 把它组装进 boot graph，浏览器加载它，它注册自己的 Node。整个过程不改 Host 一行代码，UI 的演进不惊动 agent 组合。
+
+多 agent 是这套架构的常态而不是附加题。Host 同时持有 root agent、subagent、后台 job，每个有独立的 session 和 scope。客户端通过 API gateway 拿到所有 agent 的状态和事件，Conversation Node 的 scope 机制让不同 agent 的对话渲染在不同的视图区域。scoped 调用有语法糖：`agentCtx.remote.goals.create({ objective: 'ship it' })`，agent 身份从参数里消失，由 scope 携带，同一个方法在 `ctx.remote` 上是全参版本、在 `agentCtx.remote` 上是省参版本，两个视图一个事实。
+
+仓库里有一个特殊的包值得单独点名。`api-remotes` 是全仓库唯一一个 split Host 和 Client tsconfig 的包：它的 Host 条目必须参与 Host Typert 图，它的 client 条目又依赖 Host 构建先生成的 `/remote` 声明。它同时是一份警告：官方文档明说不要因为别的包也有 `src/index.ts` 加 `src/client/index.ts` 就复制这个 split。普通 client 插件老老实实做单项目。 forwarded events 的 allowlist 是这个包的单点控制：哪些 Host 事件原样转发给消费者，一张数组说了算，类型投影、消费端 key、转发循环全部从它派生，两半读同一份声明而不是两份可能漂移的副本。
+
+非浏览器入口不走这条路。Electron 用 `file://` 加载构建产物，fetch 走 IPC bridge，Web Server 整个不出场。Python SDK 走 JSON-RPC stdio 和 runtime 通话，那条是另一个协议（headless 通道），和这里的四象限协议是两回事。Web 给人用，程序化入口各有各的 carrier，Host 组合是共享的那一半。
 
 ## 权衡与局限
 
-两半分离是有价签的。一个完整的 client 贡献要同时理解 Host 和 Client 的插件图、wire 协议、RPC 机制，涉及跨进程的类型同步和构建顺序依赖。
+两半分离有价签。贡献一个完整的 client 功能要同时理解两半的插件图、boot 协议、RPC 机制，跨进程的类型同步和构建顺序依赖都是真实成本。类型安全是构建期买断的：签名改了不重建，客户端就在旧类型上编译通过，运行时才对不上。
 
-wire 协议是 boot 级别的。`window.__DSH_BOOT__` 在页面加载时注入一次，Host 组合在页面加载后变了（HMR 加了新插件），需要重新加载页面才能拿到新 manifest。HMR 的 SSE 机制处理 bundle 内容变化，但不处理 manifest 结构变化。
+boot 协议是页面级的。图在加载时注入一次，运行中组合结构变了要重载页面。HMR 覆盖内容不覆盖结构，这条边界前面说过，这里再标一次它的方向：开发时的便利不承诺生产时的语义。
 
-Web Server 没有安全层：没有 TLS、认证、origin policy，非 loopback 部署需要自己在前面放反向代理做这些。`dsh-client-connection` 的 `trustedHosts` 做了一层 Host header 校验，但不是完整的安全方案。
+Web Server 没有安全层。loopback 是默认姿态，`0.0.0.0` 是显式豁免，非 loopback 部署需要自己在前排放反向代理补 TLS、认证和 origin 校验。host 配置只接受两个值的设计把这个决定变成了一个显式的、看一眼配置就知道风险级别的选择。
 
-stat-poll 不是实时的，HMR 默认 500ms 间隔，bundle 变更的检测有几百毫秒延迟。这是跨平台一致性的代价。
+重建式重连在大历史上会有可感的重建成本。分页对齐消息边界缓解了渲染压力，但折叠本身每次重连都要做。这是拿性能换正确性：没有快照就没有快照不一致，代价是客户端多做功。
 
-Typert Remote 是 build-time 产物。改了 Host 的 `@Remote` 方法签名，需要重新 build 才能在 Client 侧看到类型变化。公开的 `typecheck`、`lint`、`doc-typecheck` 命令会先生成这些产物。
+stat-poll 有几百毫秒的检测延迟，这是跨平台一致性的价格。开发时感知是"保存之后一小会儿浏览器才更新"，生产无感，因为生产里根本没有轮询。
 
 ## 结论
 
-Web 客户端是两半独立的 Cordis 插件图：Client Modules 扫描 `dsh.client` 声明并组装 `window.__DSH_BOOT__`，Web Server 只当一个不知道 harness 概念的 HTTP carrier，Chat Node 的定义和渲染全在浏览器侧。Host 产生事件，Client 消费事件，多 agent 场景靠 scope 和 API gateway 表达。代价是贡献一个 client 插件要跨两半的构建与类型链，回报是 UI 的演进不惊动 Host。
+Web 客户端的核心不是某个组件，是三条各管一段的纪律。代码一致性靠 rev 查询参数：内容哈希上 URL，`no-cache` 服务，缓存协议被整体排除出一致性机制。两半通话靠四象限消息协议：谁发起谁铸造 rpcId，业务代码不铸造，错误码一行一分支，传输失败和业务错误永不相混，JSON-RPC 因错误码降级和契约漂移被否决。能力暴露靠构建期生成的类型安全远程调用：复杂对象不过线、身份用字符串过河再在 Host 侧解析回活对象、每次调用现解析描述符不缓存业务对象。
+
+Host 拥有事件真相，Client 拥有渲染逻辑，Chat Node 的贡献不动 Host 一行代码。断线是重建不是续传，审批靠稳定 rpcId 的重放保证不漏不重。代价是贡献者要跨两半的构建与类型链、boot 是页面级的、Web Server 裸奔在 loopback 默认之后。评估这套架构值不值得抄，先问自己的 UI 演进频率和 agent 组合演进频率是不是真的解耦：是，这份两半图的税交得值；不是，单体前端的账单便宜得多。
 
 ## 延伸阅读
 
-- [Client Modules 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/client-modules.md)
-- [HTTP Server 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/web-server.md)
-- [API Gateway 文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/api-gateway.md)
-- [GUI Layering and RPC Protocol Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md)
-- [API Remotes README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/api/remotes/README.md)
+- [Client Modules 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/client-modules.md)：扫描、boot graph、失败姿态的完整定义
+- [HTTP Server 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/web-server.md)：路由模型、fallback 座位、config 与安全姿态
+- [API Gateway 文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/api-gateway.md)：@Remote 模型、身份解析、错误语义
+- [GUI Layering and RPC Protocol Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md)：四象限协议、重连语义、被否决的替代方案
+- [API Remotes README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/api/remotes/README.md)：唯一 split 包的结构与"不要复制"警告
 
 上一篇：[Python SDK、Headless 与 JSON-RPC：把 dsh 编进流水线](./40-python-sdk-headless-jsonrpc.md)
 下一篇：[错误处理与容错哲学：dsh 这个 harness 怎么不崩](./42-error-handling-fault-tolerance-philosophy.md)
