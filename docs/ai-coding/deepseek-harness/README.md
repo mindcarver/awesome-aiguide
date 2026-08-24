@@ -30,12 +30,12 @@
 4. 然后读 12（能力接缝）和 13（工具管线），这是 `dsh` 区别于"写死 agent"的核心设计。
 5. 收尾读 48（横评与哲学合为一篇），建立横向判断。
 
-如果想做二次开发，主干之后补 06、16（两篇源码导读，09 已含 session 包源码）和 18（写一个 LLM 适配器）。如果关心生产落地，补 19（安全）、35-36（配置与可观测）、42（容错）。
+如果想做二次开发，主干之后补 06（启动链源码导读，09 已含 session 包源码）、16（LLM stream 契约）和 18（写一个 LLM 适配器）。如果关心生产落地，补 19（安全）、35-36（配置与可观测）、42（容错）。
 
 ## 篇型说明
 
 - 📘 **概念**：讲清一个机制或设计决策。
-- 🔍 **源码导读**：配对概念篇，带你读对应包的实现（06、16；07、09 已把概念与对应源码合为一篇）。
+- 🔍 **源码导读**：配对概念篇，带你读对应包的实现（06；07、09 已把概念与对应源码合为一篇）。
 - 🛠 **实战**：hands-on，跑起来或亲手扩展。
 - 📊 **评测 / 总结**：横向对比与工程哲学（48 已把横评与哲学收束为一篇）。
 
@@ -72,15 +72,15 @@
 |---|------|------|
 | 12 | [能力接缝：dsh 换一个 provider 等于换整个产品](./12-capability-seams-swap-provider-swap-product.md) | 三角色模型、执行世界共享、逐 seam 拆解 ★ |
 | 13 | [工具执行管线与守卫：dsh 从 tool_call 到结果的七道关卡](./13-tool-execution-pipeline-and-guards.md) | 七层关卡、单调守卫、approval、并发调度、Code Mode |
-| 15 | [系统提示组装与动态 Cordis：dsh 让 agent 改自己的插件树](./15-system-prompt-assembly-and-dynamic-cordis.md) | prompt section 组装、typert/apiProxy、自指插件树修改 |
+| 15 | [系统提示组装与动态 Cordis：dsh 让 agent 改自己的插件树](./15-system-prompt-assembly-and-dynamic-cordis.md) | prompt section 组装、动态 cordis 包与 fiber 撤销、请求头变更落日志 |
 
 ### 第 5 章：模型适配：Stream 契约、多模态与 OpenAI 兼容接入（3 篇）
 
 | # | 文章 | 重点 |
 |---|------|------|
-| 16 | [🔍 LLM 适配器：dsh 的 stream 契约源码导读](./16-llm-adapter-stream-contract-source-walkthrough.md) | stream/chunk/finish 契约、normalize、replay adapter |
-| 17 | [多模态与 Attachment：dsh 怎么让 agent"看图"](./17-multimodal-attachments.md) | ctx.attachments、provider-native content 解析 |
-| 18 | [🛠 给 dsh 写一个 LLM 适配器：接 OpenAI 兼容端点](./18-write-an-llm-adapter.md) | adding-an-llm-adapter 实操 |
+| 16 | [LLM 适配器与 stream 契约：dsh 把 provider 差异关在适配器一层](./16-llm-adapter-stream-contract-source-walkthrough.md) | 封闭流式契约、差异吸收、失败归一、重放 |
+| 17 | [多模态与 Attachment：dsh 怎么让 agent"看图"](./17-multimodal-attachments.md) | 图片准入与限额、模态门控、请求级降级、内容寻址存储 |
+| 18 | [🛠 给 dsh 写一个 LLM 适配器：接 OpenAI 兼容端点](./18-write-an-llm-adapter.md) | 配置路 vs 写适配器、stream 契约三组承诺、OpenAI 兼容方言坑 |
 
 ### 第 6 章：执行世界：agent 如何安全地读写、运行、导航和联网（7 篇）
 
@@ -142,7 +142,7 @@
 ## 取舍说明
 
 - **不写成使用手册**。`dsh` 是开源框架，用户文档官方已经完备；本系列的增量在架构拆解和源码理解，不在重复"怎么点按钮"。
-- **源码导读与概念篇配对**。03→06 一组保持"概念 + 源码导读"各自成篇，16 单独导读 LLM 契约；07（turn/step + agent-loop 源码）、09（会话日志 + session 包源码）、13（工具管线 + 守卫与注册设计）、43（测试政策 + 性能压测）已合为一篇，讲完机制立刻看实现，避免概念悬空。
+- **源码导读与概念篇配对**。03→06 一组保持"概念 + 源码导读"各自成篇，16 讲 LLM stream 契约与 provider 差异吸收；07（turn/step + agent-loop 源码）、09（会话日志 + session 包源码）、13（工具管线 + 守卫与注册设计）、43（测试政策 + 性能压测）已合为一篇，讲完机制立刻看实现，避免概念悬空。
 - **安全深水区按需展开**。Landlock 原生沙箱、E2B 远程沙箱、凭证密钥的细节分散在 19、20、35 三篇，不单开独立专题；若后续需要可随时插篇。
 
 ## 延伸阅读

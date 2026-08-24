@@ -1,137 +1,102 @@
-# 🔍 LLM 适配器：dsh 的 stream 契约源码导读
+# LLM 适配器与 stream 契约：dsh 把 provider 差异关在适配器一层
 
-> `dsh` 把"模型怎么调"压成了一条**封闭的流式协议**（`StreamChunk`），所有 provider 只负责往这条协议上吐 chunk，拼装、出错归一、重放、重试全由 harness 统一兜底。
-> 适配器写得对不对，不靠 review 靠契约：八条硬性不变量加上一个 `assertNever`，错一个就编译不过或运行期直接断言炸出来。这一篇对着源码逐行拆这条契约。
+> dsh 调模型只有一条路：把请求交给 `ctx.llm`，拿回一个 `StreamChunk` 流。适配器向 harness 承诺这条流的语法和终态语义，provider 之间的全部差异（请求格式、SSE 解析、错误长相、token 记账口径）都死在适配器内部，agent loop 从不认识任何具体 provider。
+> 这一篇跟着一次流式响应走完全程：请求怎么路由、差异在哪被吸收、流回来的 chunk 承诺了什么、中途出错或被取消时契约怎么兜底。
 
-## 为什么这一篇值得单开
+## agent loop 不该认识任何 provider
 
-很多 agent 框架接模型的方式是"每个 provider 写一个 client，各自解析各自的响应"。后果是：换一个 provider，错误处理、token 计费、工具调用解析、流式拼接全得重写一遍；agent loop 里到处散落着 `if (provider === 'openai')`。
+多数 agent 框架接模型的方式是每个 provider 写一个 client，各自解析各自的响应。后果很具体：换一个 provider，错误处理、token 计费、工具调用解析、流式拼接全要重写一遍，agent loop 里散落着对 provider 名字的字符串判断。dsh 支持任意 OpenAI 兼容端点，如果 loop 认识 provider，每接一个新端点都要回头改 loop。
 
-`dsh` 反过来。它在 `packages/llm/llm` 里定义了一套 provider 中立的词汇表：消息怎么表示（`Message`/`ContentBlock`）、一次请求长什么样（`GenerateOptions`）、流回来的原始协议是什么（`StreamChunk`）、失败怎么统一（`LlmFailure`）。所有 provider 适配器，不管是 DeepSeek 官方的 direct-fetch 实现，还是 pi-ai 那种基于第三方库的实现，都吐同一种 chunk。**agent loop 只认 chunk，从不认 provider。**
+dsh 的做法是在 `packages/llm` 里定义一套 provider 中立的词汇：消息怎么表示（`Message` 和内容块）、一次请求长什么样（`GenerateOptions`）、流回来的原始协议是什么（`StreamChunk`）、失败长什么样（`LlmFailure`）。所有适配器吐同一种 chunk，loop 只认 chunk。目前挂在这个接缝上的有 direct-fetch 的 `llm-deepseek`、基于第三方库的 `llm-pi-ai`、测试替身 `llm-replay`。
 
-这套设计把"接一个新模型"从"重写半个 harness"降级成"实现一个 `stream()` 方法"。但要让它成立，契约必须足够硬。这篇就是拆这条契约硬在哪。
+一次流式响应的完整旅程长这样：
 
-## 先定位接缝：`ctx.llm`
+```text
+loop 组装请求
+  → provider 字符串在注册表里选中适配器，model 只是建议
+  → llm/stream waterfall：洋葱皮拦截，语法校验和测试替身挂在这层
+  → 适配器：序列化请求、解析 SSE、归一错误、看门狗计时
+  → provider HTTP
+  → chunk 流回程：增量实时先行，收尾三件套殿后
+  → 双轨消费：原始 chunk 落会话日志，assembler 同时拼装
+  → assistant 消息定型；失败收敛成统一 code 交给策略层
+```
 
-`ctx.llm` 是 `dsh` 几十个能力接缝里最核心的一个。它的服务类型是 `LlmRuntime`，定义在 `packages/llm/llm/src/index.ts`。能力 seams 文档对它的描述只有一行：
+## 认 provider，不认 model
 
-> LLM adapter registry + streaming call API。
+请求里的 provider 字符串是路由键，在适配器注册表里选中一个适配器实例；model 原样传给它。模型目录是建议性的，没列在目录里的 model id 一样可能被接受，适配器才是权威。这个选择把两件事解耦了：接一个新端点是注册一条 provider 路由，模型增删改不动注册表。
 
-这句话拆成两半。`adapter registry` 这一半：`registerAdapter(providers, adapter)` 把一个适配器注册到若干 provider 路由上，重复注册同一个 provider 抛 `DUPLICATE_ADAPTER`，而且 all-or-nothing，要么全注册成功要么一个都不动；注册返回的 handle 既是 disposer，又能原子地 `replace(providers)` 换路由。`streaming call API` 这一半：`stream(options)` 发起一次调用，返回 `AsyncIterable<StreamChunk>`。
+注册本身有原子性保证。重复注册同一条路由抛 `DUPLICATE_ADAPTER`，要么整组注册成功要么一个都不动；注册句柄上的 `replace()` 在一个同步段里换掉整组路由，任何请求都观察不到中间的空窗。
 
-谁在用这个接缝？agent loop 在每个 step 组装好请求，调 `ctx.llm.stream()`；消费者（UI、压缩器、telemetry）要么直接读 chunk 流，要么用 `BlockAssembler` 拼装。三个官方 provider 全挂在同一个 `ctx.llm` 上：`llm-deepseek`、`llm-pi-ai`、`llm-replay`（测试用的录制回放适配器，从 fixture 文件里吐录制好的响应）。
+## 中途拦截：llm/stream waterfall
 
-路由还有一条容易忽略的规矩：`GenerateOptions.provider` 这个字符串选中适配器，`GenerateOptions.model` 传给那个适配器。模型 id 不需要在生命周期开始时注册，catalog 是 advisory（建议性的），适配器可以接受没列在 catalog 里的 model id。换句话说，路由认 provider，不认 model。
+到达适配器之前，请求先穿过 `llm/stream` waterfall。这是标准的洋葱皮中间件：每层监听器拿到请求和一个通往下层的 `next()`，可以放行，也可以自己 yield chunk 短路整次调用。适配器的解析发生在洋葱最里层，所以监听器在适配器被选中之前就有机会接管。dsh-llm 自己的运行期语法校验器就挂在这层的最前面，`llm-replay` 在测试里也用 catch-all 模式挂在这层替代真实 provider。
 
-## `StreamChunk`：封闭的原始协议
+loop 构建的请求在这条路上是深度冻结的，改动会抛错，还带着一个进程局部的 loop 标记。原因是可重建性：请求内容是会话日志的纯函数，监听器只能读不能改。手搓的一次性调用不带这个标记，但消息同样遵守不可变契约。
 
-这是整篇的核心。一次流式响应可能交织好几种块：文本、推理（reasoning）、多个工具调用。`StreamChunk` 用 `index` 把每个增量绑到它所属的块上，`block-end` 携带那个块拼好的完整 `ContentBlock`。类型定义在 `packages/llm/llm/src/types.ts`，七个变体，不多不少：
+## 差异死在适配器内部
 
-| 变体 | 带什么 | 语义 |
-|---|---|---|
-| `block-start` | `index` + `blockType` | 宣告一个块开始 |
-| `text-delta` | `index` + `text` | 文本增量 |
-| `reasoning-delta` | `index` + `text` | 推理增量 |
-| `tool-call-delta` | `index` + `id` + `argumentsDelta` | 工具调用增量，`name` 可选 |
-| `block-end` | `index` + `block` | 携带拼好的完整块 |
-| `usage` | `TokenUsage` | 本次调用的 token 记账 |
-| `finish` | `reason` + 可选 `replayState` | 终态，可带适配器私有的重建状态 |
+direct-fetch 的 DeepSeek 适配器和库支撑的 pi-ai 适配器内部结构完全不同，对外吐的却是同一种 chunk。以 direct-fetch 实现为例，provider 差异被吸收在四类事上。
 
-几个设计决定撑住了这个协议。
+请求序列化：provider 中立的请求变成 OpenAI 兼容端点的 HTTP 请求体，系统提示、工具 schema、采样参数各就各位。
 
-它是封闭联合（closed discriminated union），不是随便往里加成员的开放集合。dsh 在每个对 `type` 的 `switch` 结尾放 `assertNever`：只要新增一个 chunk 变体，所有消费它的地方都编译失败，逼你逐个处理。这是故意把扩展成本做高，换来所有消费者都能依赖的类型安全。
+流式翻译：SSE 载荷里的增量翻成 block-start 和 delta chunk。usage 在 wire 上有两种到达形态，附着在收尾 chunk 上，或者作为尾部 usage-only chunk 单独到，适配器两种都收，取最新的一份。
 
-用 `index` 而不是嵌套结构。一个 provider 同时流式吐两个工具调用的参数时，用 `index: 0` 和 `index: 1` 区分，不搞嵌套流。这把"交织"降维成"给每个增量贴个下标"。
+记账口径：DeepSeek 的 `prompt_tokens` 把缓存命中折进一个总数，适配器把缓存命中扣出来，让 token 计数的三个输入字段互不重叠，计费输入等于三者之和。口径统一后，上层看到的价格计算不再依赖自己知道这个 provider 的记账习惯。
 
-`block-end` 带完整块。消费者不需要自己把 delta 拼回完整块，适配器在 `block-end` 时已经拼好了。拼装责任放在适配器（它最懂自己的协议）还是放在公共 assembler，是个取舍，dsh 选了两边都给：适配器吐带完整块的 `block-end`，同时 `BlockAssembler` 也能容忍只有 delta、没有 start/end 的协议。
+错误长相：401 和 403 归 AUTH，429 归 RATE_LIMIT 并顺带解析 retry-after，400 里细节表明超上下文的归 `CONTEXT_WINDOW_EXCEEDED`，5xx 归 SERVER，DNS、TLS、拒连这类传输失败（fetch 只给一句 TypeError: fetch failed）包装成 TRANSPORT。消费者按 code 路由，永远不做 provider 文本匹配。
 
-`finish` 是终态，可以带 `replayState`。一段适配器私有的无损 JSON 状态，用来日后重建这个 provider 的原生响应。这个机制后面 replay 一节单独讲。
+适配器还背三条统一义务。一是 provider 卡住自己兜底：每次流读取挂一个空闲看门狗，默认五分钟，只在迭代器挂起时计时，慢而持续产出的流不触发，超时归 TIMEOUT，调用方更早的 abort 归 ABORTED，整个请求共用一个取消信号。二是每个请求带产品 User-Agent，版本取自包清单，部署可以换成自己的身份但去不掉归因。三是一次适配器调用就是一次 provider 尝试：适配器必须关掉底层库自带的重试（pi-ai 把库的 maxRetries 设为 0），恢复是 agent 层的事。
 
-## 八条不变量：适配器必须守，消费者可以靠
+## 回程：一条封闭的流式协议
 
-契约原文是一长串"every adapter MUST obey"，列在 `StreamChunk` 的 JSDoc 里。浓缩成八条，每条都对应一个真实工程问题。
+`StreamChunk` 有七个变体，但把它理解成两层更准确。动作词汇是封闭的：宣告块开始、三种增量、宣告块结束、记账、终态，七种动作不多不少，每个对 type 的 switch 结尾是 `assertNever`，新增一种动作会让所有消费者编译失败。内容词汇是开放的：块类型和 finish 原因是 merge-extensible 的映射，插件可以加宽，新块类型从 `block-start` 携带的类型字段里通过。这个区分是协议的关键：加一种新模态不需要动流式协议本身，加一种新流式动作则要所有消费者一起点头。
 
-1. `usage` 在 `finish` 之前，`finish` 之后什么都不许有。两者都推迟到 provider 的流结束标记，"统计 token"和"判断结束"才能可靠并发，不会被一条只有 usage 的尾巴 chunk 破坏顺序。
-2. 工具调用的 `arguments` 全程是原始 JSON 字符串。部分片段通过 `argumentsDelta` 流式传；原生返回解析后对象的 provider，在 `block-end` 时自己重新 stringify。为什么不让适配器吐对象？因为流式场景下对象没法增量拼，字符串可以。
-3. 两条错误出口，一种 `LlmFailure` 类型。失败要么从 `stream()` 里 throw（传输/协议错误），要么用 `finish {kind:'error'|'aborted', failure}` 结束流（provider 在带内报错，适配器没法中途抛）。`LlmRuntime.stream()` 会把 throw 出来的错误归一成终态 `error` 或 `aborted` finish，再暴露给消费者，两条路殊途同归。
+适配器对流的具体承诺有几条。交织的增量用 index 关联，多个工具调用的参数并行流式时靠下标区分，不搞嵌套流。`block-end` 携带拼好的完整块，消费者不需要自己把 delta 折回去。工具调用的参数全程是原始 JSON 字符串，因为对象没法增量拼接而字符串可以。usage 在 finish 之前，finish 之后什么都不许有；direct-fetch 适配器把 block-end、usage、finish 全部缓冲到 SSE 的 [DONE] 哨兵才按序发出，增量实时流、收尾一次性到位，用实现结构机械保证了这条顺序。
 
-`LlmFailure` 是一个可序列化的 provider 中立负载：人可读的 `message`，稳定的路由 `code`，可选的 HTTP `status` 和诊断 `requestId`。有个字段容易误读：`providerRetryAfterMs` 只是"provider 请求等多久"，不是"决定要不要重试"。重试决策属于策略层（`dsh-llm-retry`），不属于适配器。这条区分 dsh 反复强调：**机制和策略分开**。
+契约的兑现分三层。编译期：封闭联合加 `assertNever`，加变体就编译失败。运行期：dsh-llm 的语法校验器包住每条流，finish 之后再吐 chunk、usage 出现两次、增量落在没有打开的块上、正常结束时还有块没关，都会 fail loud，这个校验由可配置的 invariants 服务启用。消费端防御：`BlockAssembler` 对迟到的增量和重复的 block-end 直接忽略，行为异常的适配器既撑不爆内存，也污染不了一个已经完成的块。合起来：适配器写错，要么编译期炸，要么开发期断言炸，线上消费端还守得住。
 
-4. 一次适配器调用等于一次 provider 尝试。适配器必须关掉底层库自带的 retry。agent 级别的恢复是另开一个持久的、编号的 turn；直接调 `ctx.llm.stream()` 的调用方就是单次尝试，不重试。
-5. provider 卡住由传输层兜底。两个线上远程适配器都暴露正的、有限的 `streamIdleTimeoutMs`，默认五分钟。看门狗只在迭代器 `next()` 挂起时上膛，整个请求用一个稳定信号，超时映射成 `TIMEOUT`，更早的调用方 abort 保持 `ABORTED`。
-6. 上下文溢出有唯一 code。两个 DeepSeek 适配器通过 `isContextWindowExceededError()` 把 provider 的具体细节归一成 `CONTEXT_WINDOW_EXCEEDED`，不管失败是 throw 出来的 HTTP 错误还是带内 finish 错误。消费者只按 code 路由，绝不按 provider 文本字符串匹配。
-7. 空响应是可重试错误，不是静默成功。终态 `stop` 但一个 content block 都没带的，映射成 `finish {kind:'error'}` 加 `EMPTY_RESPONSE` code，`dsh-llm-retry` 默认重试它。
-8. 每个请求带 app 归因头。适配器必须发 `attributionHeaders()`（`packages/llm/llm/src/attribution.ts`），落到标准 `User-Agent`，并且要有 wire 级测试证明它真发出去了。
+## 消费：双轨记账，一份拼装实现
 
-这八条不是文档摆设，每条都能在源码里找到对应的断言或测试。违反任何一条，要么编译期炸，要么运行期在不变量检查里炸，要么在 wire 测试里挂。
+agent loop 对每条 chunk 同时做两件事：原样记进会话日志（`assistant/chunk` 事件），喂给一个 `BlockAssembler`。流结束后从 assembler 读出完整内容块、usage 和 finish，拼成 assistant 消息。两轨缺一不可：日志要保真，日后才能确定性重放；拼装要正确，消息才能定型。拼装算法全局只有这一份实现，任何需要把流折回消息的消费者都用它，不各自重写。
 
-## `BlockAssembler`：唯一的拼装实现
+中途取消时，assembler 的 `interruptedBlocks()` 给出能安全定稿的前缀：有实际内容的文本和推理块，带着中断标记存进日志；工具调用一律省掉，因为截断的调用不该被执行，保留它就得伪造一个结果。max-tokens 截断走同一个逻辑：拼装时丢掉所有工具调用，因为半截参数同样不安全。这个保留或丢弃的决定还同步剪掉重放元数据里对应位置的条目，保证存储的元数据永远描述存储的内容。
 
-chunk 是封闭协议，谁来把它折回 `ContentBlock`？答案是 `packages/llm/llm/src/assembler.ts` 里的 `BlockAssembler`，全局唯一一份实现。
+## 失败：两条出口，一种形状
 
-agent loop 的用法是双轨：一边把原始 chunk 记进会话日志（保真，日后能 replay），一边把同一批 chunk 喂给一个 assembler，流结束后读 `blocks()`、`message()`、`usage`、`finish`。流被取消截断时，`interruptedBlocks()` 给出能安全定稿的前缀，工具调用被省掉，因为截断的调用不该被执行。需要拼装结果又不想自己重写折回逻辑的消费者，都用这一个类。
+适配器失败有两条合法出口：从 `stream()` 里 throw（传输和协议错误），或者用带 error 或 aborted 的 finish 结束流（provider 在带内报错，适配器吐到一半没法抛）。runtime 在适配器边界把 throw 归一成终态 finish chunk，调用方已取消的记 aborted，其余记 error，消费者看到的是同一形状的 `LlmFailure`：人可读的 message、稳定的 code、可选的 HTTP 状态和诊断 requestId。归一只发生在适配器边界之内，中间件和消费者自己的失败仍然向上抛，不会被吞成流内的 finish。
 
-它有两个容错行为。第一，容忍只有 delta、没有 `block-start`/`block-end` 的协议。第二，某个 `index` 已经被 `block-end` 关闭了又来 delta 时直接忽略，行为异常的适配器既撑不爆内存，也污染不了一个已经完成的块。
+两个容易误读的点。`providerRetryAfterMs` 只是 provider 请求等多久，不是要不要重试的决定。第三方 SDK 自带的错误 code 不进 dsh 的分类，归一器只认 harness 自己的 code，外来的记 UNKNOWN，防止别人的字符串污染路由表。
 
-## normalize：把五花八门的失败收拢成一种
+重试既不在适配器也不在 waterfall。终态 error 到达 agent loop 后走 `agent/request-error` 事件，恢复策略作为监听器决定怎么办，默认最多 5 次、可重试的 code 一张表（`EMPTY_RESPONSE`、RATE_LIMIT、SERVER、TIMEOUT、TRANSPORT），指数退避从 500ms 起封顶 10 秒。空响应被映射成 `EMPTY_RESPONSE` 而不是静默成功，正是为了进这张表：模型偶尔返回一个没有任何内容块的完成，这是可重试的故障，不是成功。没有恢复时，结构化失败成为这个 turn 的错误，本次尝试不提交任何 assistant 消息或工具副作用。
 
-前面不变量第 3、6、7 条说的其实是同一件事：归一化。
+## 重放：chunk 流是可持久化的单位
 
-不同 provider 报错的方式千差万别。OpenAI 兼容端点返回 HTTP 429 加一段 JSON；DeepSeek 的 `prompt_tokens` 把缓存命中折进了一个总数；有些 provider 流到一半才在带内说"超长了"。如果让 agent loop 直接面对这些，代码会变成一堆 provider 专属的字符串匹配。
+每条 chunk 原样落日志，直接后果是：重放不需要 provider。测试替身 `llm-replay` 从录制好的会话日志里重建 chunk 流，按 turn 和 step 分组还原每一次调用，整套 agent 测试离线确定性跑完，不需要 API key。它能做到这一点，靠的正是"流协议是中立的、日志是保真的"这两条前面的设计。
 
-`dsh` 的做法是在适配器边界就把它们翻译成统一的 `code`。"上下文超长"无论以何种形式到达，都映射成 `CONTEXT_WINDOW_EXCEEDED`；空响应映射成 `EMPTY_RESPONSE`；看门狗超时映射成 `TIMEOUT`；调用方主动 abort 保持 `ABORTED`。
+另一个 replay 是消息级的 `replayState`。成功的 finish 可以携带一个两半的信封：response 级的适配器私有元数据，加可选的逐块条目。harness 两半都不读，只共享一个词汇：拼装丢弃一个块，就同步丢弃同位置的条目。谁能拿到这段状态也有严格限制：只有历史 provider 和目标 provider 当前注册在同一个适配器实例上才传递，否则 runtime 把它剥掉，适配器只收到中立内容加 provider 和 model 字段。适配器用不了收到的状态时，那条消息降级为中立转换并附诊断，请求不失败。规则这么严的理由：私有状态跨适配器传递，等于让一个不理解它的适配器去解释别人的内部状态。
 
-归一化之后，agent loop 的错误处理就干净了：`agent/request-error` 这个事件拿到的是结构化的 `LlmFailure` 加上不可变的事实（之前的重试事实、serving 策略、turn 信号），监听器返回 `{ kind: 'retry' }` 表示修好了要重试。没有恢复的话，这个结构化失败就成了 turn 的错误，这一次尝试不会提交任何 assistant 消息或工具副作用。
+## 权衡
 
-## replay：两个不同的东西，别搞混
+封闭协议的扩展成本是真实的。加一种流式动作，所有消费者编译失败；一个 provider 专属、别家用不上的流式事件进不了协议。dsh 的态度写在文档里：新模态只有适配器、UI、压缩、持久化重放路径都支持了，才进内容词汇表。
 
-"replay"在 `dsh` 里指两件不同的事，容易混。
+写适配器有门槛。契约有九条 MUST，加上 replayState 所有权和错误归一的 code 体系，官方专门有一篇 cookbook 带着写一个，这件事本身说明门槛不低。调试链也长：一个请求穿过 waterfall、适配器、provider HTTP 好几层，出问题时要对着 chunk 日志定位是适配器翻译错了还是 provider 返回得怪。
 
-第一个是 per-message 的 `replayState`。一次成功的 `finish` 可以带一段适配器私有的无损 JSON 状态，agent loop 把它和拼好的 assistant 消息一起存进会话日志。日后要把这个 provider 的原生响应重建出来（比如跨模型迁移、跨 provider 转换），这段状态就是原料。`LlmRuntime` 的规则是：只有当历史消息的 provider 和当前目标 provider 当前都注册在同一个适配器实例上时，才把这段状态传给那个适配器。适配器自己校验状态、自己负责跨模型或跨 provider 的转换。别的适配器只会收到 provider 中立的 content 加上 provider/model 字段，拿不到这段私有状态。
+两个更隐蔽的洞。看门狗只在挂起时计时，意味着每四分五十九秒吐一个字的病态流永远不超时，五分钟约束的是空闲间隔不是总时长。usage 的缓存扣除靠适配器做对，口径算错不会被运行期抓到，只会体现在账单里。
 
-为什么要这么严格？因为 replayState 是适配器私有的，跨适配器传过去等于让一个不理解的适配器去解释别人的内部状态，会出诡异的 bug。用"同一实例"这个条件一刀切，干净。
-
-第二个是 `llm-replay` 适配器。这是一个测试用的 provider，从 fixture 文件里吐录制好的响应，让测试可以确定性地重放，不碰真实 provider。它和 `llm-deepseek`、`llm-pi-ai` 一样注册在 `ctx.llm` 上，只是它的"调用"是读文件。配置参考文档明确写了："`dsh-llm-replay` 适配器从 fixture 文件提供录制好的 LLM 响应，支持确定性测试重放，无需真实 provider 访问。"
-
-两回事：一个是消息级别的私有重建状态，一个是测试级别的整 provider 替身。读到源码里 `replayState` 字段和 `llm-replay` 包名时，要知道它们解决的不是同一个问题。
-
-## `llm/stream` waterfall：接缝的扩展点
-
-`ctx.llm` 不只是一个注册表。它还挂了一个 `llm/stream` 的 waterfall 事件，包住每一次流式调用，监听器拿到请求配置和一个通往下一层的 `next()`，定义在 `packages/llm/llm/src/index.ts`。
-
-waterfall 的语义是"洋葱皮中间件"：监听器可以调 `next()` 把请求传给下一层（最终到达解析出的适配器的 `stream()`），也可以自己 yield chunk 来短路整个调用。retry、replay、路由这些横切逻辑都挂在这里，不需要改动 agent loop 或适配器。
-
-一个细节：loop 构建的请求带一个进程局部的 `markAgentLoopRequest` 标记，并且是深度冻结的，对它 mutate 会抛错。原因是它的内容是会话日志的纯函数（可重建性硬规矩），监听器只能读、不能改。手搓的一次性调用不带这个标记，但它的 messages 也遵守不可变创建契约。
-
-## 真实代码长什么样
-
-光讲契约容易飘，给一个具体落点。`packages/llm/llm-deepseek/src/` 下的 DeepSeek 适配器是 direct-fetch 实现（不依赖第三方 SDK），职责切在三处：
-
-- `translate.ts` 把 provider 中立的 `GenerateOptions` 翻译成 DeepSeek 的 HTTP 请求体。
-- `sse.ts` 解析 provider 返回的 SSE 流。
-- `adapter.ts` 实现 `stream()`，把 SSE 事件翻译成 `StreamChunk` 序列 yield 出去，`isContextWindowExceededError()` 这类归一化逻辑也在这里。
-
-对比之下，`packages/llm/llm-pi-ai/src/` 是基于第三方库的实现，内部结构完全不同（多出 `catalog.ts`、`discovery.ts`、`replay.ts`），但它对外吐的同样是 `StreamChunk`。这就是封闭契约的回报：内部实现可以天差地别，外部接口一模一样。
-
-## 权衡与局限
-
-这套设计不是没有代价。最直接的是封闭联合的扩展成本：加一个 chunk 变体，所有消费者编译失败；一个 provider 专属、别的 provider 用不上的流式事件想进协议，会很别扭。dsh 的态度是，新模态只有当它的适配器、UI、压缩、持久化重放路径都支持了，才允许进 `ContentBlockMap`。
-
-写适配器的门槛也真实存在。八条不变量、replayState 的所有权规则、归一化的 code 体系，写一个合规适配器不是半小时的事，官方专门有一篇 cookbook 带你写一个（接 OpenAI 兼容模型），那个流程本身就说明门槛。调试链也长：一个请求从 `agent/request` 到 `llm/stream` waterfall 到适配器再到 provider HTTP，中间好几层，出问题时定位"是适配器翻译错了还是 provider 返回怪"，需要对着 chunk 日志看。这是全插件化架构的共性代价。
-
-回报是：接一个新模型不用碰 agent loop，错误处理统一，token 计费口径一致，测试能完全离线确定性回放。对一个要支撑"任意 OpenAI 兼容端点"的 harness 来说，这个取舍是划算的。
+回报对等：接新模型不碰 agent loop，错误处理统一到一张 code 表，记账口径一致，测试完全离线确定性重放。对一个要支撑任意 OpenAI 兼容端点的 harness，这个取舍是划算的。
 
 ## 结论
 
-`ctx.llm` 把"调模型"压成三个东西：一个注册表（适配器挂 provider 路由）、一个封闭流式协议（`StreamChunk` 七变体）、一套把 provider 花样收拢成统一 code 的归一化层。适配器只实现 `stream()` 吐 chunk，拼装交给唯一的 `BlockAssembler`，错误交给 `LlmFailure`，重试交给策略层，扩展交给 `llm/stream` waterfall。契约用 `assertNever` 和运行期断言把"写错适配器"变成编译失败或即时爆炸，而不是线上诡异行为。也因此 provider 是一个挂在接缝上、吐标准 chunk、可干净撤销的注册，而不是焊死在 agent loop 里的 import。
+`ctx.llm` 把调模型压成一个注册表加一条封闭流协议。路由认 provider 不认 model，接新端点只是注册一条路由。provider 差异死在适配器内部：请求怎么序列化、SSE 怎么解析、错误归一成什么 code、缓存怎么扣账，都是适配器的私事；对外的承诺只有一条流的语法和终态，增量先行、收尾殿后、失败有两条出口一种形状。契约靠三层兑现：编译期的封闭联合、可启用的运行期语法校验、消费端的防御性拼装。重试归策略层，重放归会话日志，适配器只是一次 provider 尝试。代价是扩展贵、门槛高、调试链长，换来的是 agent loop 永远不用认识任何一个 provider。
 
 ## 延伸阅读
 
-- [LLM Streaming 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/llm-streaming.md)：本文主要依据，含全部类型定义与适配器契约原文
-- [Capability Seams](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/capability-seams.md)：`ctx.llm` 行，三个 provider 都挂同一接缝
-- [Adding an LLM Adapter](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cookbook/adding-an-llm-adapter.md)：写一个适配器的官方 cookbook
-- [`packages/llm/llm/src/types.ts`](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/llm/src/types.ts)：`StreamChunk`、`LlmFailure`、`GenerateOptions` 源码
-- [`packages/llm/llm/src/assembler.ts`](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/llm/src/assembler.ts)：`BlockAssembler` 唯一拼装实现
+- [LLM Streaming 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/llm-streaming.md)：契约原文与全部类型定义
+- [Capability Seams](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/capability-seams.md)：ctx.llm 接缝在全景里的位置
+- [Adding an LLM Adapter cookbook](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cookbook/adding-an-llm-adapter.md)：官方的适配器编写教程
+- [packages/llm README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/README.md)：子包职责概览
+- [llm-replay README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/test-support/llm-replay/README.md)：录制回放测试替身的机制细节
 
 上一篇：[系统提示组装与动态 Cordis：dsh 让 agent 改自己的插件树](./15-system-prompt-assembly-and-dynamic-cordis.md)
 下一篇：[多模态与 Attachment：dsh 怎么让 agent"看图"](./17-multimodal-attachments.md)

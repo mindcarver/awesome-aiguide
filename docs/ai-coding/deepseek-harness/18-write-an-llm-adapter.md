@@ -1,130 +1,102 @@
-# 🛠 给 dsh 写一个 LLM 适配器：接 OpenAI 兼容端点
+# 给 dsh 写一个 LLM 适配器：接 OpenAI 兼容端点
 
-> 接一个新模型 provider，在 `dsh` 里就是继承 `LlmAdapter`、实现一个 `stream()` 方法、把它注册到 `ctx.llm`，剩下的事（拼装、归一化、重试、日志）harness 全替你兜了。
-> 难点不在写代码，在守契约：七条协议义务，每条都对应一个真实 provider 的坑，守不住就线上出诡异行为。这一篇带你接一个 OpenAI 兼容端点，把契约逐条落到实现里。
+> 在 dsh 里接一个新模型 provider 有两条路：端点方言不重，走配置，在 llm-pi-ai 插件里声明一条路由就够；方言重到配置开关表达不了，才写适配器插件。写适配器本身不难，难在守住 chunk 协议的三组承诺：流的形状、token 口径、错误语义。每一组承诺都对应 harness 里一个具名的下游消费者，漏守一条，bug 会藏进 token 计费、上下文压缩、错误恢复这些漂移型故障里。
 
-## 这一篇解决什么问题
+## 先分两条路：配置，还是代码
 
-你有一个 OpenAI 兼容的模型端点（自建的 vLLM、第三方网关、或者任何实现了 `/v1/chat/completions` 的服务），想让 `dsh` 能用它。你不打算 fork 源码，只想挂一个插件。
+拿到一个 OpenAI 兼容端点（自建 vLLM、第三方网关、任何实现了 chat completions 的服务），第一反应不该是写代码。dsh 的 llm-pi-ai 插件本身就是"接任意 OpenAI 兼容端点"的配置通道：pi-ai 目录里没有的路由可以直接声明，给出路由名、baseURL、协议名，再配一份模型清单。
 
-这正是 `ctx.llm` 接缝存在的意义。回顾前两篇：所有 provider 适配器都吐同一种 `StreamChunk`，agent loop 只认 chunk。所以接一个新 provider，本质上是写一个"把 OpenAI 兼容协议翻译成 `StreamChunk`"的适配器。
+```yaml
+providers:
+  acme-gateway:
+    displayName: Acme Gateway
+    apiKeyEnv: ACME_GATEWAY_API_KEY
+    api: openai-completions
+    baseURL: https://gateway.acme.example/v1
+    compat:
+      maxTokensField: max_tokens
+    models:
+      - id: acme-large
+        contextWindow: 65536
+        maxTokens: 4096
+```
 
-`dsh` 官方有两个参考实现：`packages/llm/llm-deepseek`（direct HTTP，SSE 用 `eventsource-parser` 解析）和 `packages/llm/llm-pi-ai`（包装一个 LLM 库）。这篇以 OpenAI 兼容端点为例，但结构对齐 `llm-deepseek` 的布局。
+端点和标准 OpenAI 协议有出入时，compat 开关吸收差异：maxTokens 字段叫什么、思考内容用什么格式回传、developer 角色能不能用。模型清单可以现场探测，探测走 GET /models，返回超过 4 MiB 直接拒收，结果只是候选，不落盘。
 
-## 最小骨架长什么样
+判断条件就一条：方言能不能被 compat 开关和现有协议表表达。能，走配置，一天能接十个网关；不能，或者你要直接掌控 HTTP 层，写适配器。仓库里两个官方适配器正好是两条路的标本：llm-deepseek 自己发 fetch、自己解析 SSE，llm-pi-ai 包装 pi-ai 库。
 
-cookbook 给的最小形状是一个 Cordis 插件文件。核心是适配器类：继承 `LlmAdapter`，只实现一个异步生成器方法 `stream(options)`，产出 `StreamChunk`，方法体就是适配器的全部工作：翻译请求、发 HTTP、解析 SSE、yield chunk。外面套插件的标准件：`name` 声明插件名，`inject` 声明依赖 `ctx.llm`，`Config` 用 schemastery 声明配置（`apiKey` 标成 secret，`baseURL` 给默认值）。入口 `apply(ctx, config)` 里一句 `ctx.llm.registerAdapter(['my-provider'], new MyAdapter(config))`，把适配器挂上 `my-provider` 路由。
+写适配器的注册动作很小。一个 Cordis 插件文件，适配器类继承 LlmAdapter、实现一个流式方法，插件入口把实例注册到你声明的 provider 路由数组上，文件以路径挂进 cordis.yml 就能加载。注册是可逆副作用，插件卸载自动撤销，热重载不留垃圾；一条路由只允许一个适配器，重复注册整批失败，杜绝"同一个 provider 有两个适配器、运行期不知道走哪个"的歧义。路由选适配器，模型 id 不在生命周期里登记，所以一个适配器能服务目录里还没有的模型。接不接受没登记的模型由适配器自己决定：llm-deepseek 接受任意模型 id，llm-pi-ai 的手写路由没列就拒，两种都合法。
 
-四条注册规矩值得先记住。
+凭证只放引用。配置里写的是环境变量名，每个请求经凭证服务解析一次，字面密钥不是配置值。能力问题也归适配器答：上下文窗口、默认输出上限、推理档位，一次查询拿全。推理档位是适配器拥有的不透明 id 列表，id 不必等于它在 wire 上的拼写，比如"关思考"这个档位根本不上 wire，直接翻成关闭思考的开关；调用方选了不支持的档位，拒绝，不做夹紧。
 
-注册是基于副作用的。`apply` 里调 `registerAdapter`，这个调用是 Cordis 的可逆副作用，插件卸载时自动撤销。它因此 HMR 安全：改了配置热重载，旧路由干净撤掉，新路由挂上，不留垃圾。
+## 适配器只做翻译，chunk 之后的事不归它管
 
-一个 provider 路由只能有一个适配器。重复注册会抛 `DUPLICATE_ADAPTER`，而且是 all-or-nothing，要么全注册成功要么一个都不动。这条规矩杜绝了"同一个 provider 有两个适配器，运行期不知道走哪个"的歧义（注册表的完整机制见 16 篇）。
+适配器收到的请求是 provider 中立的：系统提示、消息历史、工具 schema、采样参数、一个取消信号。它的工作是把这份请求翻译成端点的 HTTP 调用，再把端点的流式响应翻译成一种统一的块事件流吐出去：块开始、各类增量、块结束、用量、终态。这个词表是闭合的，消费者用穷举分支处理，新增一种事件会在每个消费者处编译失败，这是刻意的。
 
-`options.provider` 选适配器，`options.model` 是 provider 的模型 id。模型 id 不需要在生命周期开始时注册，所以一个能动态发现模型的适配器，可以不重启就服务新模型。
+分工的另一半更关键：适配器只要吐出合法的事件，块重组不是它的事。harness 里有唯一的组装器把事件流折回完整消息，agent 循环一边把原始事件落会话日志（重放保真），一边喂同一个组装器。适配器中途抛出的异常也逃不出去，运行时把它归一成一条终态的失败事件。边界干净：适配器管方言翻译，harness 管拼装、归一化、日志、重放。
 
-密钥走 schemastery Config 加环境变量回退。Config 里声明 `apiKey`，从 `cordis.yml` 里用 `!!js process.env.MY_KEY` 注入，绝不在代码里自己读 key 文件。这是 `dsh` 凭证管理的统一姿势：集中、可轮换、不散落。
+边界干净不等于责任轻。下游的一切都建立在"你吐的事件说话算数"上。
 
-## 把职责拆开
+## 流的形状：三条硬规矩
 
-写适配器最容易犯的错，是把所有逻辑堆进一个 `stream()` 方法里。cookbook 明确建议把五件事拆成独立职责，对齐 `llm-deepseek` 的布局：
+第一条：用量必须在终态事件之前，终态之后什么都不许再发。现实里的 provider 什么形态都有，有的把用量挂在最后一个带内容的块上，有的在流末尾单独补一个只有用量的尾巴块。稳妥做法是把终态和用量都缓冲到端点的流结束标记（OpenAI 系是 [DONE]），再一起发。llm-deepseek 走得更远：所有块的结束事件也压到 [DONE] 才发，增量照常实时流，整块和终态最后一次性交清，对"尾巴只有用量"的形态免疫。
 
-| 职责 | 干什么 | llm-deepseek 里的位置 |
-|---|---|---|
-| wire 类型 | provider 请求和响应的原生类型定义 | `types.ts` |
-| 请求序列化 | 把 `GenerateOptions` 翻译成 provider 的 HTTP 请求体 | `translate.ts` |
-| 传输解析 | 解析 provider 返回的流（SSE、chunked 等） | `sse.ts` |
-| chunk 翻译 | 把 provider 事件翻译成 `StreamChunk` | `translate.ts` / `adapter.ts` |
-| 适配器类 | 实现 `LlmAdapter`，串起上面四件事 | `adapter.ts` |
+第二条：工具调用的参数全程是原始 JSON 字符串。provider 分片给的就按增量透传；像 pi-ai 这种库直接给解析好的对象，适配器要在块结束时重新序列化。这条规矩防的是账目分裂：工具执行管线拿到的就是这串字符，任何一处偷偷解析再重新拼，空格、键序、转义全变，和日志里、用户看到的版本对不上。
 
-拆开的好处是可测：你可以单测"请求序列化对不对"而不需要发真实 HTTP，也可以单测"SSE 解析对不对"而不需要管模型逻辑。`llm-deepseek` 的测试目录里就有 `translate.spec.ts`、`sse.spec.ts` 各自独立测。
+第三条：块的 index 按首次出现顺序分配，同一个块的每个增量复用同一个 index。流式响应里文本、推理、多个工具调用是交错的，index 是把它们重新编队的唯一线索。
 
-## 一步步接 OpenAI 兼容端点
+漏掉任何一条，先砸组装器，再砸所有把"消息"当事实的子系统。还有一个容易被当成无害的情况：模型什么都没生成就正常结束。这不能算成功。空补全映射成带专用 code 的失败，默认重试策略认它，重复一次是安全的。
 
-下面给一个接 OpenAI 兼容 `/v1/chat/completions` 端点的示意实现，教学用的骨架，重点是契约怎么落，不是生产就绪代码。
+终态事件还有一个可选项：如果 provider 要求后续请求带回响应 id 或签名之类的原生状态，把它的最小投影挂在终态一起发出。运行时只在历史路由和目标路由同属一个适配器实例时才把状态传回，换 provider 就降级为中立内容加诊断。OpenAI 系的 chat completions 通常无状态，用不上；用不上就别加。
 
-### 第一步：翻译请求
+## token 口径：三个不相交的桶
 
-`GenerateOptions` 是 provider 中立的，你要把它变成 OpenAI 的请求体。`system` 映射到第一条 system 消息，`messages` 映射到 `messages` 数组，`tools` 映射到 `tools` 字段，`temperature`、`maxTokens`、`stop` 一一对应。写成一个 `serializeRequest()` 函数：组 messages 数组（有 system 就先放一条，再逐条转换 content），URL 是 baseURL 拼 `/chat/completions`，请求体里 `maxTokens` 映射到 `max_tokens`。
+接完端点最常见的症状：能对话，但计费和上下文压力全对不上。原因多半在口径。OpenAI 系的用量把缓存命中折进一个 prompt 总数；dsh 的口径是三个不相交的桶：未缓存输入、缓存读、缓存写，计费输入是三项之和。适配器有责任把缓存部分从总数里减出来。推理 token 是信息性字段，已经含在输出里，不许再加一遍。
 
-两个开关是关键：`stream: true` 要流式；`stream_options: { include_usage: true }` 让 provider 在流末尾给 usage。OpenAI 兼容端点默认不在流式响应里给 token 用量，你得显式要，它才会在流结束时发一个带 usage 的尾巴 chunk。这关系到下面第一条契约。
+这个口径不是洁癖。会话日志上有一个用量折叠服务，逐条累计每个成功调用的用量；压缩插件靠它的压力读数决定什么时候收窄历史。计数重叠或漏减，压力曲线就是斜的，压缩要么提前触发，要么永远不触发。两个官方适配器都为这个减法专门写了映射和单测。
 
-### 第二步：解析 SSE 流
+## 错误语义：两条出口，一套稳定 code
 
-OpenAI 兼容端点用 SSE 推流：每个事件是 `data: {...}`，流结束是 `data: [DONE]`。解析写成一个异步生成器 `parseSSE(response)`：取 `response.body`，串两条管道，先过 `TextDecoderStream` 把字节解成文本，再过 `eventsource-parser` 的 `EventSourceParserStream` 切成 SSE 事件；然后 `for await` 遍历，见到 `[DONE]` 就结束，否则把 `event.data` 解析成对象交给下游。用库解析是为了避免手写分隔出错，`llm-deepseek` 用的就是它。
+适配器的失败只有两条合法出口：从流式方法里抛出，用于传输和协议层失败；或者用带失败载荷的终态事件收流，用于流已经开始后 provider 在带内报错。两条出口最终归一成同一种结构化失败，但哪类失败走哪条，要定死并写进文档。
 
-### 第三步：把 provider 事件翻译成 StreamChunk
+比出口更重要的是 code。每个失败带一个稳定的机器路由 code，消费者只按 code 行事，从不读 provider 的报错原文。这套 code 真的有人在路由：agent 级重试插件默认认五个 code（空响应、限流、服务端错误、超时、传输），默认重试五次，指数退避 500 毫秒到 10 秒；上下文超长归一成专用 code，压缩子系统靠它知道该收窄历史了；认证、配额、无效请求各有 code，决定重试还是立刻放弃。你的适配器把限流报成通用错误，恢复就少一层；把上下文超长报成普通 400，压缩永远不会被触发，会话卡死在同一个报错上。
 
-这是核心。OpenAI 流式响应里，每个 chunk 是 `choices[0].delta`，delta 里可能有 `content`（文本）、`tool_calls`（工具调用片段），尾巴 chunk 里可能有 `usage`。翻译规则一句话：**block 的 index 按首次出现顺序分配，同一块的每个 delta 复用同一个 index**。
+配套的还有三条边界义务。一次适配器调用等于一次 provider 尝试：自己包的 HTTP 库要显式关掉它的重试，否则和 agent 级恢复叠加，行为不可控。请求里 provider 兑现不了的字段要抛"不支持"，不许静默丢弃，静默丢弃会让调用方以为生效了。每个 HTTP 请求带上应用归因头，并且用 wire 级测试证明它真的发出去了。取消信号要透传；流式读挂一个空闲看门狗，两个官方适配器默认五分钟没有新事件判超时，SSE 的心跳注释算活跃证据。
 
-`stream()` 的主流程五段。发请求：用 `serializeRequest()` 的结果发 POST，请求头带 `Authorization` 和 `Content-Type`，再展开 `attributionHeaders()`（app 归因头必须带），`signal` 必须传 `options.signal`；响应不 ok 就抛 `LlmError`。备记账：一张 `toolCallIndexes` 映射，从 OpenAI 的 tool call index 映到本地 block index；一个 `nextBlock` 发号器。翻译：遍历 `parseSSE()` 吐出的每个事件，文本内容就三连发 `block-start`、`text-delta`、`block-end`；工具调用片段首次出现时领一个新 index 并发 `block-start`，然后发 `tool-call-delta`，`argumentsDelta` 保持原始 JSON 字符串；usage 出现就发 `usage` chunk。收尾：给每个工具调用块发 `block-end`，把累计的 arguments 拼好后封口。最后发 `finish`，reason 是 `{ kind: 'stop' }`。
+## OpenAI 兼容是光谱，历史是持久的
 
-注意这是简化骨架。真实实现要在内存里累计每个工具调用的 `argumentsDelta`，在流结束时拼成完整 JSON 字符串，再用 `block-end` 发出完整的 `ToolCallBlock`。上面为了讲清主流程省略了累计逻辑。
+没有哪个端点是完整兼容 OpenAI 的，各自在协议上长方言。llm-deepseek 的序列化层记满了这类现实：
 
-### 第四步：token 用量的口径
+- 无文本的 assistant 回合发空字符串，绝不发 null。有的网关直接拒收 null；更糟的是官方端点对纯推理回合的 null 内容回 400，而这条消息已经持久落在会话日志里，一次坏序列化让这条会话的每一轮后续请求都被同一个 400 拒掉。
+- 可选字段省略不发，不发 null，让 provider 的默认值生效。
+- 空的工具输出也要给占位文本。
+- 词表外的结束原因（内容审查、资源不足、未来新增）映射成带 code 的失败，不冒充正常停止。
+- 思考型模型的第一个增量常是空字符串，不能据此开块。
 
-这是最容易踩的坑。`dsh` 用的是**不相交（disjoint）计数**：`inputTokens` 只算未缓存输入，缓存命中单独报为 `cacheReadTokens`/`cacheWriteTokens`，计费输入是三者之和。
+这里有个放大器：适配器翻译的不只是当前请求，是整条持久历史，每一轮都把全部历史重新序列化一次。所以序列化里每个方言处理都是永久投资，而序列化 bug 的代价是整条会话，不是一次请求。
 
-但 OpenAI 兼容端点（和 DeepSeek 的 `prompt_tokens`）经常把缓存命中折进一个总数。你的适配器有责任把它减出来：换算函数 `toTokenUsage()` 做三个字段的映射，`outputTokens` 取 `completion_tokens`，`cacheReadTokens` 取 `prompt_tokens_details` 里的 `cached_tokens`，而 `inputTokens` 如果这个数里含缓存命中，要先减出来。
+两个官方适配器吸收方言的方式值得对比。direct HTTP 路线把方言全握在自己手里：HTTP 状态码、retry-after 头、响应体细节都能读，错误分类精确；代价是协议细节全要自己写。包装库路线协议白拿，但库会把错误压扁成一个 message 字符串，原始的 cause 链在路上丢了，错误分类退化为正则匹配文本，还受制于上游修不修。llm-pi-ai 的 compat 开关是把方言再往配置层推一步：让部署声明端点的怪癖，而不是给每种网关发一个适配器。
 
-口径错了，token 计费和上下文压力探测就全错。cookbook 专门单列一节讲这个，两个官方适配器都因为它专门做了减法。
+## 权衡
 
-## 七条协议义务，逐条对账
+契约的厚度是一笔双向账。适配器要守的规矩多：三条流形状、一套 token 减法、一套 code 纪律、一次一次尝试。换来的是消费端变薄：组装器不用防备胡乱的事件流，重试插件只认 code，压缩只看压力读数，谁都不需要理解任何一个 provider。反过来，规矩漏守的 bug 都长在最难复现的地方，计费漂移、压缩时机漂移、恢复失效，每个都要跨子系统追。
 
-cookbook 把契约浓缩成七条，写适配器时逐条自检。
+整块缓冲到流结束标记的取舍：增量实时流，整块和终态最后交清，换来对尾巴块形态的免疫；代价是消费者拿到完整块的时间推迟到流尾，对渲染无感，对想在块完成后立刻动手的消费者有延迟。
 
-1. `usage` 在 `finish` 之前，`finish` 之后什么都不发。稳妥做法是把 finish 和 usage 缓冲到 provider 的流结束标记再一起 flush，这处理了某些 provider 发"只有 usage 的尾巴 chunk"的情况。上面的实现里，靠 `stream_options: { include_usage: true }` 拿到 usage，再在 `[DONE]` 后发 finish，顺序就对了。
-2. 工具调用 `arguments` 全程是原始 JSON 字符串，片段用 `argumentsDelta` 流式传。如果你的 provider 直接返回解析后的对象，在 `block-end` 时重新 stringify。
-3. block 的 `index` 按首次出现顺序分配，同一个块的每个 delta 复用同一个 index。
-4. 错误只有两条合法出口。要么从 `stream()` 里 throw（传输和协议失败，用 `LlmError` 带稳定 code），要么用 `finish {kind:'error'|'aborted'}` 结束流（provider 带内失败）。按失败类别选一个，并写进文档。
-5. 必须响应 `options.signal`。把它传给 fetch 或你的 SDK，调用方取消时你要能及时停下来。
-6. 不支持的字段要明确报错。provider 不支持 `stop` 序列，就抛 `LlmError(..., 'UNSUPPORTED')`，而不是静默丢弃。静默丢弃会让调用方以为生效了，bug 极难查。
-7. 需要 native 元数据的，用 `finish.replayState`。如果 provider 在后续调用里要求带上次的响应 id、签名之类的原生元数据，把最小化的无损 JSON 投影作为 `replayState` 发出，重建历史时校验它。`LlmRuntime` 只在历史 provider 路由和目标 provider 路由当前属于同一个适配器实例时才传这段状态；你的适配器自己决定同模型、跨模型、跨 provider 的恢复是否合法。状态缺失时，绝不凭 provider/model 名字猜 native replay。
-
-这七条不是建议，是硬性义务。两个官方适配器都是按这套契约验证过的，你的适配器也得这样。
-
-## 模型元数据与 reasoning
-
-除了 `stream()`，适配器还可以实现几个可选方法提供模型元数据。最常用的是 `resolveModel(provider, model, signal)`，返回精确模型的身份加可选的 `context`（上下文窗口）和 `reasoning`（推理档位）字段。
-
-reasoning 档位是适配器拥有的有序不透明 id 列表，由适配器映射到 provider 请求。注意几点：保留适配器权威的可选列表（包括适配器自定义的 `off` 档，如果支持的话）；不要暴露最终的 wire 拼写；不要把不支持的值 clamp 掉；一个 id 不必等于它的 wire 表示。只有当确实存在部署默认档位时，才声明 `defaultEffort`。
-
-provider 专属的思考模式开关留在适配器的 Config 里，不进 provider 中立的请求类型。
-
-## 验证：别只靠手测
-
-写完适配器，验证要走仓库的 testing policy。`llm-deepseek` 的测试目录给出了范例：
-
-- `translate.spec.ts`：单测请求序列化，不发真实 HTTP。
-- `sse.spec.ts`：单测 SSE 解析。
-- `mock-server.ts`：一个本地 mock server，跑端到端的 stream 流程但不碰真实 provider。
-- `adapter.spec.ts`：用 mock server 测适配器整体行为。
-- `adapter.e2e.ts`：真实 provider 的端到端测试，通常在 CI 里按条件运行。
-
-关键是三件事：验证 app 归因头真的发出去了（wire 级测试），验证 token 用量口径对，验证错误归一化的 code 对。这些在契约里都是硬要求。
-
-## 权衡与坑
-
-别把 provider 中立类型和 wire 类型混在一起。`GenerateOptions` 是 provider 中立的，OpenAI 的请求体是 wire 类型。混在一起，适配器就和 provider 中立层耦合了，以后换 harness 内部表示会牵连你。分开两个文件，中间一个翻译函数。
-
-fetch 库的 retry 要关掉。契约要求一次适配器调用等于一次 provider 尝试。很多 HTTP 库默认开 retry，你要显式关掉，否则重试会和 agent 级别的恢复（`dsh-llm-retry`）叠加，行为不可控。
-
-上下文溢出要归一化。你的 provider 报"上下文超长"时，通过类似 `isContextWindowExceededError()` 的判断，归一成 `CONTEXT_WINDOW_EXCEEDED` code，不管它是 HTTP 413 还是带内消息。消费者只按 code 路由。
-
-空响应要当错误。终态 `stop` 但一个 content block 都没有的，映射成 `finish {kind:'error'}` 加 `EMPTY_RESPONSE` code，别让它静默成功。
+两条路本身的取舍：配置路快，但方言超出 compat 开关就没有余地；代码路什么都能做，但每个方言处理都是你要维护的代码。先配置后代码，方言顶破开关的那天再写适配器，这时 llm-deepseek 的目录布局就是模板：wire 类型、请求序列化、传输解析、事件翻译、适配器类五块分开，序列化和传输可以脱离真实端点单测。
 
 ## 结论
 
-接一个 OpenAI 兼容 provider，在 `dsh` 里是个边界清晰的活：继承 `LlmAdapter`、实现 `stream()`、拆成 wire 类型/序列化/传输解析/chunk 翻译/适配器类五块、注册到 `ctx.llm`、密钥走 schemastery Config。难的不是写代码，是守七条协议义务：usage 顺序、原始 JSON 参数、index 分配、两条错误出口、响应 signal、不支持就报错、replayState 所有权。
-
-守住了，你的 provider 就和官方三个 provider 一样，享受 harness 的拼装、归一化、重试、日志、可重建全套兜底。守不住，bug 会藏在 token 计费、上下文压力、错误恢复这些不容易复现的地方。
+接一个 OpenAI 兼容端点，先走配置：llm-pi-ai 的手写路由加 compat 开关，能覆盖大多数网关，方言顶破开关再写适配器。适配器是翻译层，请求翻译过去，块事件流翻译回来，拼装、归一化、日志、重放全部交还 harness。它的难度集中在三组承诺上：流的形状（用量先于终态、参数全程原始字符串、index 首见分配、空补全算失败）、token 的不相交口径（缓存从总数里减出来，否则压力曲线是斜的）、错误语义（两条出口、稳定 code、一次调用一次尝试）。每条承诺都有具名消费者，code 是重试和压缩的路由键，漏守就砸一个子系统。方言处理里最贵的教训是持久历史：序列化 bug 不是一次失败，是把这条会话写坏。
 
 ## 延伸阅读
 
-- [Cookbook: adding an LLM adapter](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cookbook/adding-an-llm-adapter.md)：本文主要依据，含契约原文与参考实现指引
-- [LLM Streaming 文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/llm-streaming.md)：`StreamChunk` 协议与适配器契约的完整定义
-- [`packages/llm/llm-deepseek`](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/llm/llm-deepseek)：direct HTTP 参考实现，本文布局对齐它
-- [Testing Policy](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/testing.md)：适配器覆盖、真实 provider 检查、发布要求
+- [Cookbook: adding an LLM adapter](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cookbook/adding-an-llm-adapter.md)：适配器契约的官方浓缩版
+- [LLM Streaming 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/llm-streaming.md)：块事件协议与适配器契约的完整定义
+- [用户指南：Providers](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/providers.md)：配置路接 provider 的完整参数
+- [开发实践：LLM adapters](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/practice/llm-adapter.md)：最小实现与注册示例
+- [dsh-llm-deepseek README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/llm-deepseek/README.md)：direct HTTP 参考实现
+- [dsh-llm-pi-ai README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/llm-pi-ai/README.md)：多 provider 配置与 compat 开关
 
 上一篇：[多模态与 Attachment：dsh 怎么让 agent"看图"](./17-multimodal-attachments.md)
 下一篇：[沙箱、审批与权限：dsh 怎么安全地放 agent 上机](./19-sandbox-approval-permission.md)
