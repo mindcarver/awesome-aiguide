@@ -1,0 +1,27 @@
+{
+  "id": "conv-1784962726878-86ehrevgg",
+  "providerId": "codex",
+  "title": "Greet user",
+  "titleGenerationStatus": "success",
+  "createdAt": 1784962726890,
+  "updatedAt": 1785318497034,
+  "lastResponseAt": 1785318497034,
+  "sessionId": "019f9811-c1c4-74c0-9944-949c2d8c5f6c",
+  "selectedModel": "gpt-5.5",
+  "providerState": {
+    "threadId": "019f9811-c1c4-74c0-9944-949c2d8c5f6c",
+    "sessionFilePath": "/Users/carver/.codex/sessions/2026/07/25/rollout-2026-07-25T14-58-48-019f9811-c1c4-74c0-9944-949c2d8c5f6c.jsonl",
+    "transcriptRootPath": "/Users/carver/.codex/sessions",
+    "workspaceDependencyToolVersion": 1
+  },
+  "usage": {
+    "inputTokens": 164114,
+    "cacheCreationInputTokens": 0,
+    "cacheReadInputTokens": 161152,
+    "contextWindow": 258400,
+    "contextWindowIsAuthoritative": true,
+    "contextTokens": 164114,
+    "percentage": 64,
+    "model": "gpt-5.5"
+  }
+}
