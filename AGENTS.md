@@ -7,7 +7,7 @@
 - `README.md` 是公开入口页。保持简短，并以导航为主。
 - `docs/README.md` 是学习路径、雷达图和路线图的内容地图。
 - `docs/ai-coding/` 存放 AI 编程工具索引。每个工具使用一个聚焦的 Markdown 文件，例如 `docs/ai-coding/claude-code.md`。
-- `assets/` 存放 README 使用的媒体资源，例如 `assets/awesome-ai-guide-cover.png`。
+- `assets/` 存放 README 使用的媒体资源，例如 `assets/awesome-ai-guide-cover.webp`。
 
 目前还没有应用源码或测试套件。
 
@@ -57,7 +57,7 @@ find docs -maxdepth 2 -type f | sort
 
 知识卡片图应包含 6-12 个视觉卡片或模块，卡片内容由前置总结提炼而来。可以使用图标、几何符号、色块、编号感和流程连接，但不要生成可读文字。不要使用风景图、机器人、赛博朋克、深色背景、品牌 logo、真实产品 logo、复杂知识图谱或拥挤的信息墙。
 
-图片文件放在 `assets/`，命名使用 kebab-case，例如 `assets/agent-learning-cover.png`。文档中使用相对路径引用，例如 `../../assets/agent-learning-cover.png`。
+图片文件放在 `assets/`，命名使用 kebab-case，例如 `assets/agent-learning-cover.webp`。文档中使用相对路径引用，例如 `../../assets/agent-learning-cover.webp`。
 
 ## 测试指南
 

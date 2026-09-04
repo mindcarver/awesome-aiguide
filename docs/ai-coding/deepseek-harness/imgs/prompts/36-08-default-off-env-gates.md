@@ -1,6 +1,6 @@
 ---
 id: 36-08
-output: ../36-08-default-off-env-gates.png
+output: ../36-08-default-off-env-gates.webp
 aspect: 16:9
 style: notion
 watermark: false

@@ -1,6 +1,6 @@
 ---
 id: 36-20
-output: ../36-20-telemetry-boundary-summary.png
+output: ../36-20-telemetry-boundary-summary.webp
 aspect: 16:9
 style: notion
 watermark: false

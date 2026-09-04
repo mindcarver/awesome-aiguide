@@ -1,6 +1,6 @@
 # Claude Code 不是补全工具，而是一套工程代理运行时
 
-![Claude Code 工程代理运行时封面](../../../assets/claude-code-agent-runtime-cover.png)
+![Claude Code 工程代理运行时封面](../../../assets/claude-code-agent-runtime-cover.webp)
 
 **TL;DR：** Claude Code 的价值不在于"多写几行代码"，而在于把模型放进一个能读仓库、改文件、跑命令、接工具、受权限约束的执行环境。把它当工程代理运行时来配置和治理，而不是 IDE 补全插件来用。
 

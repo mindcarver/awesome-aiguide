@@ -4,8 +4,8 @@
 
 Remote Handoff 会把现有聊天与 Git 状态移到连接的目标 host，并在目标机创建或复用 worktree。目标机必须保存同一 Git 仓库；若项目是仓库子目录，两端还要保存同一子目录。
 
-<!-- wos:illustration codex-engineering/43-remote-handoff/01-infographic-concept-map.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/01-infographic-concept-map.png)
+<!-- wos:illustration codex-engineering/43-remote-handoff/01-infographic-concept-map.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/01-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 Handoff 不会把目标机变成源机器的镜像。依赖、凭据、环境变量、后台进程、浏览器登录和系统权限仍属于目标 host。官方当前不支持把聊天 handoff 到 Codex cloud，正在运行的响应会先被中断再迁移。
@@ -20,8 +20,8 @@ Handoff 不会把目标机变成源机器的镜像。依赖、凭据、环境变
 
 Remote Control 让手机或另一台受支持设备控制正在运行 ChatGPT 桌面应用的 host。工作仍在那台 host 上执行，手机负责查看进度、回复问题和审批。
 
-<!-- wos:illustration codex-engineering/43-remote-handoff/02-timeline-lifecycle-timeline.png -->
-![Notion 图解：先把三种「远程」分开](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/02-timeline-lifecycle-timeline.png)
+<!-- wos:illustration codex-engineering/43-remote-handoff/02-timeline-lifecycle-timeline.webp -->
+![Notion 图解：先把三种「远程」分开](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/02-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 SSH project 让桌面应用通过 SSH 启动远程 Codex App Server，直接使用远程机器的文件、依赖、权限和计算资源。
@@ -34,8 +34,8 @@ Handoff 则改变一个聊天的运行位置。它迁移聊天和 Git 状态，�
 
 源 host 上有聊天、仓库路径、分支、Git diff 和当前执行状态。目标 host 上必须先存在同一仓库对应的 saved project。Codex 只显示匹配项目的目标位置。
 
-<!-- wos:illustration codex-engineering/43-remote-handoff/03-framework-system-framework.png -->
-![Notion 图解：Handoff 的数据路径](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/03-framework-system-framework.png)
+<!-- wos:illustration codex-engineering/43-remote-handoff/03-framework-system-framework.webp -->
+![Notion 图解：Handoff 的数据路径](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/03-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 用户确认目标 host 和 branch 后，Codex 在目标机创建或复用 worktree，传输聊天与 Git 状态，再把聊天切换到目标 host。若线程正在回答，Handoff 会中断当前响应后再迁移。目标机随后用自己的登录 shell、Codex 安装、凭据、plugin、Browser、Computer Use 和本地工具继续工作。
@@ -69,8 +69,8 @@ codex --version
 
 不要在测试运行到一半或 Agent 正修改多个文件时立刻点 Handoff。先要求线程停止启动新动作，等待当前命令安全结束，并检查源工作区：
 
-<!-- wos:illustration codex-engineering/43-remote-handoff/04-flowchart-operating-flow.png -->
-![Notion 图解：交接前冻结一个可验证状态](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/04-flowchart-operating-flow.png)
+<!-- wos:illustration codex-engineering/43-remote-handoff/04-flowchart-operating-flow.webp -->
+![Notion 图解：交接前冻结一个可验证状态](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/04-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 ```bash
@@ -109,8 +109,8 @@ git diff --check
 
 公开 issue `#20399` 报告过多个 SSH host 共享同一网络 HOME 时，项目与线程 host 状态混在一起。报告指出，默认 `$HOME/.codex` 中的 history、session index、SQLite 状态和 archived sessions 被多台机器共同读取，桌面侧可能把项目归到一台 host，却从另一台 host 恢复线程。
 
-<!-- wos:illustration codex-engineering/43-remote-handoff/05-infographic-verification-guardrails.png -->
-![Notion 图解：两个公开问题揭示的失败模式](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/05-infographic-verification-guardrails.png)
+<!-- wos:illustration codex-engineering/43-remote-handoff/05-infographic-verification-guardrails.webp -->
+![Notion 图解：两个公开问题揭示的失败模式](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/05-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 这是特定共享 HOME 环境的报告，不代表普通 SSH 主机都会遇到。集群、研究机构或 NFS home 场景应为每台 host 使用独立 `CODEX_HOME`，并在连接前核对：
@@ -128,8 +128,8 @@ hostname
 
 Remote connections 使用 SSH 启动和管理远程 App Server。官方文档要求不要把 App Server transport 直接暴露在共享网络或公网。跨网络访问应使用 VPN 或 mesh network，再通过 SSH 连接。
 
-<!-- wos:illustration codex-engineering/43-remote-handoff/06-comparison-boundary-comparison.png -->
-![Notion 图解：安全边界](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/06-comparison-boundary-comparison.png)
+<!-- wos:illustration codex-engineering/43-remote-handoff/06-comparison-boundary-comparison.webp -->
+![Notion 图解：安全边界](../../../assets/ai-coding-engineering-illustrations/codex-engineering/43-remote-handoff/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 移动 Remote 依赖同一 ChatGPT 账号与 workspace，并使用一对一 QR 配对。宿主机必须开机、联网并运行桌面应用。登出 ChatGPT 会关闭 Remote Control，但不会自动删除已有设备配对；重新登录后要显式开启。

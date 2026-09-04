@@ -3,7 +3,7 @@
 > dsh 把"管理目标和计划"拆成两个重量不同的机制。`ctx.planMode` 是软引导：激活时往每个模型请求塞一段部署拥有的提示，模型可以不听，它没有也不想要强制力。`ctx.goals` 是持久的事件溯源目标生命周期：阶段、修订号、轮次预算，全部从会话日志 fold 出来，跨重启恢复。围绕后者还有三件配套：给人用的 `/goal` 命令、给模型用的三个 goal 工具、把活跃目标接进 agent loop 的续跑驱动器。这篇的主线是两次拆分：先分清"引导模型"和"追踪目标"，再分清"目标怎么了"和"现在能不能续跑"。
 > 路线：plan mode 的软从哪来、状态怎么落日志、退出怎么受审；goal 的领域服务怎么防并发防崩溃、命令和工具各自有什么权限边界、驱动器怎么在竞争里调度一个自动轮次；最后并排比较两个机制的重量。
 
-![Plan Mode 与 Goal 的两种重量](imgs/29-01-two-weights.png)
+![Plan Mode 与 Goal 的两种重量](imgs/29-01-two-weights.webp)
 
 ## 为什么目标管理不是一个机制
 
@@ -21,9 +21,9 @@
 
 提示段只在激活时渲染，order 50，内容是部署配置的原文。配置校验严格到苛刻：`section` 缺失、空白、非字符串，或出现任何未知键，都在插件加载时抛错，而不是被忽略（`packages/plan/plan-mode/src/index.ts` 的 `resolveConfig`）。一个拼错键名的部署在启动那一刻就被拦下，不会带着一段不知道从哪来的提示跑半个月。
 
-![引导不冒充强制](imgs/29-02-guidance-not-enforcement.png)
+![引导不冒充强制](imgs/29-02-guidance-not-enforcement.webp)
 
-![Plan Mode 的四样东西](imgs/29-03-plan-mode-four-parts.png)
+![Plan Mode 的四样东西](imgs/29-03-plan-mode-four-parts.webp)
 
 ### 引导不冒充强制
 
@@ -33,9 +33,9 @@
 
 所以 plan mode 的安全观很诚实：它是引导，不是安全边界。模型在 plan mode 里坚持动手改文件，拦得住它的是沙箱和审批。引导没被遵守，那是引导的成本；用错了工具去强制才是事故。
 
-![Plan Mode 状态的纯 fold](imgs/29-04-plan-pure-fold.png)
+![Plan Mode 状态的纯 fold](imgs/29-04-plan-pure-fold.webp)
 
-![可重放的 pending 视图](imgs/29-05-replayable-pending.png)
+![可重放的 pending 视图](imgs/29-05-replayable-pending.webp)
 
 ### 状态是纯 fold，没有镜像
 
@@ -45,9 +45,9 @@
 
 2026 年 8 月的一次修复（提交 `51fa8da8a3`，"accept image-only plan requests"）还顺带把投影层加固了一轮。`plan` 投影单元现在的状态是三元的：`active` 记录已提交的模式，`wanted` 记录最近一次成功选择的目标值，`running` 记录一条还没等到配对结算的命令执行。`command/run` 记录用户敲下的 `/plan` 选择，`command/done` 只保留成功的选择，`plan/mode` 提交后清掉待生效值。于是"pending"对客户端成了纯重放量：host 重启、其他标签页、冷读，全部从日志恢复同一个 `{ active, pending }` 视图，`stateVersion` 升到 2。请求组装路径上的进程内 pendingIntents 仍然存在，但客户端看到的开关状态不再依赖它。
 
-![turn 边界 flush 的原子时机](imgs/29-06-turn-boundary-flush.png)
+![turn 边界 flush 的原子时机](imgs/29-06-turn-boundary-flush.webp)
 
-![set 的四条出路](imgs/29-07-set-outcomes.png)
+![set 的四条出路](imgs/29-07-set-outcomes.webp)
 
 ### turn 边界 flush：pending 的四条出路
 
@@ -65,7 +65,7 @@ plan mode 最精巧的部分是选择的落盘时机。因为每个会话事件�
 
 代价也有，README 直接承认：turn 最后一个被接受的 pre-step 之后做的选择是进程本地的，进程在下一个被接受的 in-turn pre-step 之前退出，选择就丢了，UI 得重新应用它。这是 turn 边界 flush 的对价：选择不是立即落盘，要等一个能保证原子性的时机。
 
-![exit_plan_mode 的受审退出](imgs/29-08-reviewed-exit.png)
+![exit_plan_mode 的受审退出](imgs/29-08-reviewed-exit.webp)
 
 ### exit_plan_mode：一次受审的退出
 
@@ -81,7 +81,7 @@ plan mode 最精巧的部分是选择的落盘时机。因为每个会话事件�
 
 被拒绝的方案有两个，都值得看一眼。把计划放进模型上下文的 surface（比如作为一条 assistant 消息持久化）会花双份模型上下文：压缩一次，surface 翻转一次，同一份计划占两处。把计划写成文件（比如固定目录下一个 plan 文档）会造出第二个持久之家：会话日志说状态是 A，文件说状态是 B，哪个是真的？计划作为 `exit_plan_mode` 的工具调用参数留在日志里，一处持久，一处派生，这个问题就不存在。
 
-![/plan 的文字与图片输入](imgs/29-09-plan-command-images.png)
+![/plan 的文字与图片输入](imgs/29-09-plan-command-images.webp)
 
 ### /plan 命令：现在也吃图
 
@@ -97,7 +97,7 @@ plan mode 最精巧的部分是选择的落盘时机。因为每个会话事件�
 
 第二条是三个轴根本没有共同的所有权结构。plan mode 的提示段归部署，沙箱模式归执行世界，审批策略归交互层，它们的生命周期、配置入口、消费方各不相同。硬捏一个共享基类或注册表，等于强迫三个独立演化的子系统共用一件尺码不对的衣服。宁可三个机制各自直白，也不要一个谁都要迁就的抽象。
 
-![Goal 的四件套目标栈](imgs/29-10-goal-four-piece-stack.png)
+![Goal 的四件套目标栈](imgs/29-10-goal-four-piece-stack.webp)
 
 ## Goal：一个四件套的目标栈
 
@@ -105,7 +105,7 @@ plan mode 最精巧的部分是选择的落盘时机。因为每个会话事件�
 
 围绕这个领域，`packages/goal` 下现在有四个包。`goal` 是领域服务本体：事件、fold、CAS 修订号。`tool-goal` 贡献模型用的三个工具。`command-goal` 贡献人用的 `/goal` 命令。`goal-round-driver` 把活跃目标接进 agent loop，决定下一个自动轮次什么时候开始。四件套各自可拔，`agent-spine-demo` 组合里 goals 整个对象省略或设 false 就整栈不挂载；TUI 应用默认全挂；ACP 自动化应用挂领域加模型工具但有意省掉命令服务。
 
-![会话日志就是目标数据库](imgs/29-11-goal-log-database.png)
+![会话日志就是目标数据库](imgs/29-11-goal-log-database.webp)
 
 ### 会话日志就是目标数据库
 
@@ -117,7 +117,7 @@ plan mode 最精巧的部分是选择的落盘时机。因为每个会话事件�
 
 拿一个具体场景掂量这条纪律的分量。假设有人用外部脚本手改日志，把某条 `goal/change` 的 revision 从 7 改成 9。重放走到前一条 revision 6、这一条 9 的位置，发现跳号，停下来，报告位置。操作者看到的是一条明确的故障地址，不是一个被"修复"过的目标状态。如果重放选择宽容（跳过坏的、继续 fold），用户会拿到一个看似正常实则来源不明的 goal，往下每一步都建立在被污染的状态上。严格拒绝把污染挡在了入口，代价是坏日志必须人工处理，这个交换在目标这种要跨天跨重启的状态上是划算的。
 
-![Goal 的 compare-and-set 修订号](imgs/29-12-cas-revision.png)
+![Goal 的 compare-and-set 修订号](imgs/29-12-cas-revision.webp)
 
 ### 修订号：改目标先对表
 
@@ -125,7 +125,7 @@ plan mode 最精巧的部分是选择的落盘时机。因为每个会话事件�
 
 防的不只是并发。设计笔记说这套校验加新鲜 id 和转换检查，能在早期拒绝被篡改的、写了一半的、生产者不一致的 goal 记录。一个被外部工具改坏的日志，重放时会停在第一个不一致的事件上，而不是把坏数据继续往前传播。调用方的代价是要处理拒绝：stale 了就重新读、重新改。
 
-![持久阶段与进程 activation 的两层答案](imgs/29-13-phase-and-activation.png)
+![持久阶段与进程 activation 的两层答案](imgs/29-13-phase-and-activation.webp)
 
 ### 两个问题，两层答案
 
@@ -137,7 +137,7 @@ activation 是进程内的，永不持久化。`disarm` 移除进程内的续跑
 
 为什么分两层？合并的世界里"目标 active"就等于"可以续跑"。进程崩了重启，重放日志发现目标 active，续跑消费者自动开一轮，agent 在没人看的时候自己跑起来了。设计笔记的原话是，用户打开一个会话时工作静默开始是令人惊讶的。分层之后，重启的默认姿态是 disarm：日志仍然权威，目标状态原样恢复，但没有任何工作自启。想续跑，人来 resume，字面命令 `/goal resume` 或自然语言让模型调工具都行。
 
-![只数 goal 轮次的预算](imgs/29-14-goal-round-budget.png)
+![只数 goal 轮次的预算](imgs/29-14-goal-round-budget.webp)
 
 ### 轮次预算：只数 goal 的账
 
@@ -147,7 +147,7 @@ activation 是进程内的，永不持久化。`disarm` 移除进程内的续跑
 
 轮数不能超过 `maxGoalRounds`，部署配置项 `defaultMaxGoalRounds` 默认 256（`packages/goal/goal/src/index.ts` 的 schema 里 `z.number().default(256)`），必须是正的安全整数。调用方在 create 时省略 cap，由服务配置内部解析默认值；请求级的取值可以覆盖它。超出预算就 block：驱动器发现 `roundsStarted` 已等于上限时，记录 code 为 `round-limit` 的 blocked。README 同时把话说满：这个预算只数轮次，不计量 token、货币、挂钟时间或提供方配额，那些需要独立策略。
 
-![/goal 的人类控制入口](imgs/29-15-goal-command-entry.png)
+![/goal 的人类控制入口](imgs/29-15-goal-command-entry.webp)
 
 ### /goal 命令：人的入口
 
@@ -157,7 +157,7 @@ activation 是进程内的，永不持久化。`disarm` 移除进程内的续跑
 
 输出有两个刻意的省略。状态里不显示 branded id 和修订号，它们是模型和插件的协调细节，不是人类控制项。命令也不接受逐条命令的轮次上限：默认值归部署配置，得到直接人类指示后，已授权的模型工具可以编辑上限。成功的变更追加领域自有的 `goal/change` 事件，不把模型上下文加入队列，也不引入第二份审计记录；预期的 `GoalError` 被净化成稳定的 `CommandResult.error`，比较并交换的内部细节不向人类界面泄露。
 
-![Goal 模型工具与两把权限钥匙](imgs/29-16-goal-tools-two-keys.png)
+![Goal 模型工具与两把权限钥匙](imgs/29-16-goal-tools-two-keys.webp)
 
 ### 模型工具：三个工具和两把钥匙
 
@@ -171,9 +171,9 @@ activation 是进程内的，永不持久化。`disarm` 移除进程内的续跑
 
 自主轮次成功报告完成或阻塞后，工具结果会附带一段收尾指令（`wrapup.ts` 里的 `<goal_complete>` 或 `<goal_blocked>` 信封），要求模型向用户写收尾消息：说明结果、总结做了什么怎么验证的、指向具体产物，并声明这次运行不再调用工具。2026-08-02 的一次修复把原先"结果处直接终结轮次"的做法换成了这条路径，模型仍然经由常规的无工具调用停止路径结束轮次。直接人类发起的变更不收到指令，并发的人类 steering 仍可参与普通的停止检查。
 
-![Goal、Goal Round、Turn 与 Step 的层级](imgs/29-17-goal-round-hierarchy.png)
+![Goal、Goal Round、Turn 与 Step 的层级](imgs/29-17-goal-round-hierarchy.webp)
 
-![续跑驱动器的预留、接纳与结算](imgs/29-18-driver-reserve-accept-settle.png)
+![续跑驱动器的预留、接纳与结算](imgs/29-18-driver-reserve-accept-settle.webp)
 
 ### 续跑驱动器：预留、接纳、结算
 
@@ -187,7 +187,7 @@ activation 是进程内的，永不持久化。`disarm` 移除进程内的续跑
 
 一个轮次关闭后，驱动器按结果分类结算：持久化的 `completed` 在目标仍 active/armed 且未到上限时继续；取消或 `aborted` 暂停并解除激活；code 为 `RATE_LIMIT` 或 `QUOTA` 的错误以 `usage-limited` 阻塞；其他错误以 `turn-error` 阻塞；`max-tokens` 以 `max-tokens` 阻塞；持久化检查点失败解除激活但不动持久阶段；`disposed` 或 `interrupted` 解除激活；插件新增的未知结果阻塞并等待检查。没有一种异常结果会请求自动重试，保守的失败映射可能要求在暂时性错误后手动继续，但绝不会隐藏自动重试。目标在轮次内被变更时修订号前进，旧修订的结算不覆盖新变更：驱动器丢弃旧尝试的结果、读取新投影，只在新修订仍 active 加 armed 时继续。
 
-![崩溃恢复后工作不会自启](imgs/29-19-crash-recovery.png)
+![崩溃恢复后工作不会自启](imgs/29-19-crash-recovery.webp)
 
 ### 一次崩溃恢复，从头到尾
 
@@ -220,7 +220,7 @@ goal 栈的重同样有成本。每次修改都要带 revision，stale 被拒后
 
 两个包都不在 agent-loop 主干里。最小化的 headless 部署可以整栈不装，loop 照常跑，单次调用的结束语义保持物理轮次。这是"一切皆插件"在目标管理上的落点：连"agent 该有什么目标、目标怎么续跑"本身都是一个可插拔的问题。
 
-![Plan Mode 与 Goal 的完整协作路径](imgs/29-20-plan-goal-workflow.png)
+![Plan Mode 与 Goal 的完整协作路径](imgs/29-20-plan-goal-workflow.webp)
 
 ## 结论
 

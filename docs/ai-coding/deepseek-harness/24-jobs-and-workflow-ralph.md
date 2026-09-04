@@ -5,7 +5,7 @@
 
 ## 两类长活，两种接缝
 
-![Jobs 管后台生命周期、Workflow 管逻辑编排的分层](imgs/24-01-two-long-lived-seams.png)
+![Jobs 管后台生命周期、Workflow 管逻辑编排的分层](imgs/24-01-two-long-lived-seams.webp)
 
 agent 干活时经常遇到两类"不是一步能做完"的活，需求完全不同。
 
@@ -17,7 +17,7 @@ agent 干活时经常遇到两类"不是一步能做完"的活，需求完全不
 
 ## 后台任务注册表
 
-![可预测 JobId 仍由 owner 授权严格保护](imgs/24-02-job-owner-authorization.png)
+![可预测 JobId 仍由 owner 授权严格保护](imgs/24-02-job-owner-authorization.webp)
 
 ### 身份与归属：授权不靠猜
 
@@ -27,7 +27,7 @@ agent 干活时经常遇到两类"不是一步能做完"的活，需求完全不
 
 ### 生产者契约：preflight 之后没有可失败步骤
 
-![JobStart 在 preflight 后一次运行并提交](imgs/24-03-preflight-commit.png)
+![JobStart 在 preflight 后一次运行并提交](imgs/24-03-preflight-commit.webp)
 
 生产者启动一个活时给运行时一份 `JobStart`：声明 kind、一行面向模型的 label、可选的输出字节上限、可选的 owner，加一个 `run()` 函数。运行时把所有可能失败的准入工作（访问校验、并发容量、清理登记）全部做在调 `run()` 之前；`run()` 被调一次，同步返回三个钩子；从这之后，注册提交，不再有可失败的步骤。如果 `run()` 抛了，什么都没注册过，生产者自己收拾半启动的资源。
 
@@ -39,7 +39,7 @@ agent 干活时经常遇到两类"不是一步能做完"的活，需求完全不
 
 ### 结算：first-wins 与通知的次序
 
-![任务结算 first-wins 且完成通知最后送达](imgs/24-04-first-wins-settlement.png)
+![任务结算 first-wins 且完成通知最后送达](imgs/24-04-first-wins-settlement.webp)
 
 结算规则是 first-wins：第一条终态记录落账，所有等待者被释放，监听器收到一轮隔离的通知，之后哪怕生产者又交来一个迟到的结果也不能改写或重复通知。
 
@@ -53,9 +53,9 @@ kill 和 read 的返回形状也被规定死了。kill 对活着的活返回"已
 
 ### 完成怎么送达：繁忙注入，空闲唤醒
 
-![完成通知按 owner 繁忙或空闲状态分流](imgs/24-05-completion-delivery.png)
+![完成通知按 owner 繁忙或空闲状态分流](imgs/24-05-completion-delivery.webp)
 
-![唤醒预算有界并由用户消息领取后回充](imgs/24-06-bounded-wake-budget.png)
+![唤醒预算有界并由用户消息领取后回充](imgs/24-06-bounded-wake-budget.webp)
 
 这是 2026 年 8 月中旬补上的关键一块，值得完整讲。此前的机制是完成经 `agent.inject()` 交付，它只向 next-step inbox 追加而不预留 driver：模型还在工作时，通知延长当前轮次，一切正常；模型已经结束轮次（最常见的形态：启动一条长命令，告诉用户已经启动，收工），通知就搁在 inbox 里，直到某件无关的事唤醒 agent。提示词让模型不要轮询，然后什么也没到，退路成了提示词并不鼓励的阻塞等待。
 
@@ -65,7 +65,7 @@ kill 和 read 的返回形状也被规定死了。kill 对活着的活返回"已
 
 ### controller 与并发上限
 
-![controller 统一管理并发槽、任务控制与 owner 清理](imgs/24-07-controller-capacity-cleanup.png)
+![controller 统一管理并发槽、任务控制与 owner 清理](imgs/24-07-controller-capacity-cleanup.webp)
 
 `start` 在没有任何挂载的 job controller 服务这个 owner 时直接拒绝。也就是说，生产者不能起一个"owner 收集不了也停不了"的活。这个检查做在启动时而不是插件加载时，因为兄弟插件可能并发激活。controller 按效果作用域挂载，一个注册表服务进程内所有组合，监听器投递和 controller 服务都是 owner 相对的。
 
@@ -79,7 +79,7 @@ owner 的第一个任务会给 `owner.ctx` 挂一个异步 effect，`AgentHandle
 
 ### 模型怎么用：三个工具加一套提示
 
-![模型通过三种 Jobs 工具接收完成通知而无需忙轮询](imgs/24-08-jobs-tools-and-guidance.png)
+![模型通过三种 Jobs 工具接收完成通知而无需忙轮询](imgs/24-08-jobs-tools-and-guidance.webp)
 
 `dsh-tool-jobs` 把注册表的能力翻译成模型能用的三个工具：查列表、读输出、停任务，外加完成通知的注入和系统提示里的使用指引。指引放在工具插件自己名下的提示段里，不放进部署的人设，这是"工具的指导归工具插件"的分工。唤醒机制落地后，这段提示里"任务完成时你会在会话内收到通知，不要忙轮询也不要 sleep 等待"的话从愿景变成了事实，一字未改。
 
@@ -103,7 +103,7 @@ owner 的第一个任务会给 `owner.ctx` 挂一个异步 effect，`AgentHandle
 
 ## 工作流引擎
 
-![Workflow 的 meta 作为可校验数据而不是脚本代码](imgs/24-09-meta-is-data.png)
+![Workflow 的 meta 作为可校验数据而不是脚本代码](imgs/24-09-meta-is-data.webp)
 
 ### 启动请求：meta 是数据不是代码
 
@@ -117,7 +117,7 @@ meta 的处理方式是 dsh 和 Claude Code 的一个刻意分歧。CC 把 meta 
 
 ### 结果与句柄：永不 reject 的 result
 
-![workflow 结果将完成、取消与错误统一为字段](imgs/24-10-never-reject-result.png)
+![workflow 结果将完成、取消与错误统一为字段](imgs/24-10-never-reject-result.webp)
 
 一次 run 的结果有四样：`value` 是脚本的返回值（宿主域 JSON，仅 `completed` 时有意义）；`stopReason` 是封闭联合 `completed`、`cancelled`、`error`；`error` 在非 `completed` 时带信息，消费者把它映射成 `isError` 工具结果，绝不把部分输出当成功；`agentsStarted` 统计整个生命周期接受的 `agent()` 调用数，优雅结算时用脚本侧计数，强制终止路径上退化为宿主观测计数。
 
@@ -125,7 +125,7 @@ meta 的处理方式是 dsh 和 Claude Code 的一个刻意分歧。CC 把 meta 
 
 ### fatal 与 null：两种失败不许混
 
-![fatal 配置错误与可汇合的 null 子项失败严格分开](imgs/24-11-fatal-vs-null.png)
+![fatal 配置错误与可汇合的 null 子项失败严格分开](imgs/24-11-fatal-vs-null.webp)
 
 脚本里的误用会抛 `fatal: true` 的 `WorkflowError`：坏参数、未知或延迟的 `agent()` 选项、schema 超出结构化输出子集、触顶、接缝启动失败、取消。组合子 `parallel()` 和 `pipeline()` 对 fatal 错误重新抛出，而不是把这一项映射成 `null`。
 
@@ -133,7 +133,7 @@ meta 的处理方式是 dsh 和 Claude Code 的一个刻意分歧。CC 把 meta 
 
 ### 值边界：脚本世界与宿主世界
 
-![工作流脚本和宿主之间只传递物化后的 JSON 值](imgs/24-12-script-host-value-boundary.png)
+![工作流脚本和宿主之间只传递物化后的 JSON 值](imgs/24-12-script-host-value-boundary.webp)
 
 脚本跑在每次一个新的 worker 线程里，worker 内用 vm 上下文收窄脚本可见的 API，消息端口 RPC 桥接 `agent()` 调用。脚本和宿主之间的值要过一个物化边界：出站的值被拷贝成宿主域 JSON，函数、symbol、循环引用、非有限数字一律拒绝；脚本抛出的值经一个全量渲染器处理，保证 `result` 没有任何路径 reject。hook 抛的错是宿主域的 `WorkflowError`，脚本按 `name` 和 `code` 分支，不按 `instanceof`，因为跨 realm 的原型链对不上。
 
@@ -141,7 +141,7 @@ meta 的处理方式是 dsh 和 Claude Code 的一个刻意分歧。CC 把 meta 
 
 ### 事件：观察者拿不到控制权
 
-![workflow 观察事件只发送独立快照而不暴露控制柄](imgs/24-13-observer-snapshots.png)
+![workflow 观察事件只发送独立快照而不暴露控制柄](imgs/24-13-observer-snapshots.webp)
 
 六种 `workflow/*` 事件全是只观察的 emit，携带数据快照。隔离做在三个层面。每个 payload 以 run 信息（id 加 meta）开头，永远不是活的句柄，订阅者拿不到 `cancel` 和 `dispose`。`workflow/end` 故意省略结果值，观察结果的监听器绝不可能收到调用方结果的可变别名。每个监听器收到自己的 payload 克隆，抛错的订阅者只记日志、不传播、饿不死后面的监听器。
 
@@ -149,7 +149,7 @@ meta 的处理方式是 dsh 和 Claude Code 的一个刻意分歧。CC 把 meta 
 
 ### run 怎么落进会话日志
 
-![四类持久事件让 workflow 运行历史跨刷新可重建](imgs/24-14-durable-workflow-history.png)
+![四类持久事件让 workflow 运行历史跨刷新可重建](imgs/24-14-durable-workflow-history.webp)
 
 实时的 `workflow/*` 事件只存在于当前进程，刷新或稍后重开会话就丢了运行历史。2026 年 8 月上旬的持久化改造补上了这个洞：`dsh-tool-workflow` 把每个已接受的顶层运行投影到调用 agent 的会话，四种 `tool-workflow/*` 纯日志事件记录它。`run-start` 写稳定的 run id 和已校验名称；成员事件写序号、精确标签、可选的精确阶段、子会话 id 和结果；结果已取得且 `dispose()` 完全停稳之后，`run-end` 才写停止原因。嵌套的传输调用照常执行但不写记录，因为它不拥有独立的对话行。
 
@@ -159,7 +159,7 @@ Web 端的呈现由一个专门的对话节点定义和按 run id keyed 的渲�
 
 ## 结构化输出怎么落到子 agent
 
-![带 schema 的子 agent 必须提交可验证结构化输出](imgs/24-15-structured-subagent-output.png)
+![带 schema 的子 agent 必须提交可验证结构化输出](imgs/24-15-structured-subagent-output.webp)
 
 workflow 的返回值是纯 JSON，子 agent 也可以被要求结构化返回：`agent()` 带 schema，schema 必须落在一个可强制执行的 JSON Schema 子集里，超出就 fatal。这个子集的守门是手写的，因为 ajv 校验全量 JSON Schema 且用 `new Function` 编译，两者都不合要求；zod 也不行，它只单向生成 JSON Schema。provider 的 JSON 模式同样被拒：它保证合法 JSON，不保证符合 schema。
 
@@ -167,9 +167,9 @@ workflow 的返回值是纯 JSON，子 agent 也可以被要求结构化返回�
 
 ## Ralph：固定脚本的消费者
 
-![Ralph 在全新子 agent 间传递有界交接并依赖共享工作区](imgs/24-16-ralph-handoff-loop.png)
+![Ralph 在全新子 agent 间传递有界交接并依赖共享工作区](imgs/24-16-ralph-handoff-loop.webp)
 
-![Ralph 的轮数上限与三种诚实终局标签](imgs/24-17-ralph-budget-terminal.png)
+![Ralph 的轮数上限与三种诚实终局标签](imgs/24-17-ralph-budget-terminal.webp)
 
 Ralph 对应 `packages/workflow/tool-ralph`，是 workflow 引擎的一个固定消费者，把社区说的"Ralph 循环"（Geoffrey Huntley 推广的 Ralph Wiggum 模式）做成一个工具：把一个不可变的目标依次交给一连串全新的子 agent，直到有谁自报完成。
 
@@ -199,7 +199,7 @@ Ralph 的完成靠子 agent 自报，没有独立评估者；仅前台运行，�
 
 ## 结论
 
-![Jobs、Workflow 与 Ralph 的三层可替换架构](imgs/24-18-jobs-workflow-ralph-summary.png)
+![Jobs、Workflow 与 Ralph 的三层可替换架构](imgs/24-18-jobs-workflow-ralph-summary.webp)
 
 `ctx.jobs` 把后台任务的身份、归属、生命周期收进一个注册表：id 可预测所以安全必须走 owner 授权，preflight 全部先于 `run()` 所以注册后没有可失败步骤，结算 first-wins 且完成最后宣布，没有 controller 服务的 owner 连活都起不了；完成交付按所有者状态分流，繁忙注入、空闲唤醒，唤醒有界且由用户输入回充。`ctx.workflowEngine` 在其上让模型写编排脚本：meta 作为数据校验而不求值，`result` 永不 reject，取消有界，fatal 错误和子项 null 严格分流，观察者拿到的永远是快照不是控制权，运行历史以四种前缀纪律的事件落进会话日志。Ralph 站在栈顶，用一份固定脚本、一串全新子 agent、一份双重校验的交接报告实现迭代循环，自己只是个普通插件。每一层都可以单独换掉：换 jobs 的 provider 不动 workflow，换 workflow 引擎不动 Ralph，这正是接缝分层的意义。
 

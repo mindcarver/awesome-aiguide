@@ -1,6 +1,6 @@
 ---
 id: 36-16
-output: ../36-16-sharing-disclosure.png
+output: ../36-16-sharing-disclosure.webp
 aspect: 16:9
 style: notion
 watermark: false

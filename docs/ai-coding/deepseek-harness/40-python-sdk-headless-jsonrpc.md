@@ -3,7 +3,7 @@
 > dsh 不只有 Web UI。把它嵌进自动化流程有三种姿势，复杂度递增：headless 用一条命令跑一次性任务，Python SDK 把 agent 当库调，JSON-RPC 是两者脚下共用的 stdio 协议。三种姿势跑的是同一套 agent 组合，差别只在谁来驱动 turns、怎么收结果。
 > 两条最容易踩的边界：runtime 的 stdout 归协议所有，混进任何日志都会破坏通信，诊断信息一律走 stderr；自动化组合默认 danger-full-access，agent 能做 runtime 进程能做的任何事，安全不靠权限策略兜底，靠一次性 checkout 或容器兜底。
 
-![三种自动化入口](imgs/40-01-three-entry-modes.png)
+![三种自动化入口](imgs/40-01-three-entry-modes.webp)
 
 ## 流水线要的是什么
 
@@ -19,7 +19,7 @@ dsh 为这类场景提供了三个入口，按嵌入深度排：
 
 三者共享同一套 Cordis 组合，模型、工具、持久化完全一致。选哪个不看功能强弱，看驱动方是谁：shell 拿一次性结果，Python 进程做编排，其他语言直接说协议。给三个具体场景定位：CI 里挂一步"自动修测试"，headless 一行命令嵌进 YAML 就完；自己的服务里跑一个"每晚巡检仓库并开 issue"的循环，Python SDK 管生命周期、按天分 session；团队的工具链是 Go 写的，想内嵌 agent 能力，直接实现 stdio 协议客户端。同一个任务从 headless 迁到 SDK 不需要改任何 agent 侧的东西，改的只是驱动代码。
 
-![Headless 一次性 runner](imgs/40-02-headless-one-shot.png)
+![Headless 一次性 runner](imgs/40-02-headless-one-shot.webp)
 
 ## Headless：一条命令，一个会话，一次退出
 
@@ -37,9 +37,9 @@ pnpm dsh --profile headless "fix the failing test in this workspace"
 
 一个容易踩的坑在"输出"上。测试设施里有一个 headless-driver，能往 stdout 吐规范的会话事件 JSONL，于是总有人想拿它当机器可读的 CLI 输出格式用。文档说得很清楚：那条流是测试专用的，不是受支持的 CLI 输出格式。要机器可读的结果，走 Python SDK 或 JSON-RPC，不要解析 headless 的 stdout。另一个相关事实：子会话不会作为独立条目出现在输出里，它们只通过父会话的工具事件和结果可见。
 
-![Headless 输出边界](imgs/40-03-headless-output-boundary.png)
+![Headless 输出边界](imgs/40-03-headless-output-boundary.webp)
 
-![E2B 远程沙箱 overlay 的边界](imgs/40-04-e2b-overlay-boundary.png)
+![E2B 远程沙箱 overlay 的边界](imgs/40-04-e2b-overlay-boundary.webp)
 
 ### E2B 远程沙箱 overlay
 
@@ -49,7 +49,7 @@ headless 有一个实用的变体：E2B 沙箱 overlay。`e2b.cordis.yml` 把本
 
 即便只是概念验证，它的价值取向值得记下：把模型驱动的文件改动和命令执行挪进一个用完即弃的远程沙箱，宿主机上只留编排和日志。这和容器里跑 danger-full-access 是同一个思路的两个实现，一个靠本地隔离，一个靠物理距离，防的都是同一件事：agent 犯错时，爆炸半径别落在你的机器上。
 
-![SDK 捆绑 runtime](imgs/40-05-sdk-bundled-runtime.png)
+![SDK 捆绑 runtime](imgs/40-05-sdk-bundled-runtime.webp)
 
 ## Python SDK：把 agent 当库用
 
@@ -67,7 +67,7 @@ python -m pip install deepseek-harness-sdk
 
 还有一个仅供开发的运行时载体：完整的 `runtime/node/` 目录闭包，用系统 Node 22.19 以上直接跑，执行 `dsh-sdk-jsonrpc-demo` 的 packaged-bin。它永远不会被自动选中：模式选择的优先级是显式参数高于 `DSH_RUNTIME_MODE` 环境变量（取值 exe 或 node），都缺省时自动解析只找生产 exe。生产部署绝不会悄悄跑在源码构建上，这是刻意钉死的。
 
-![DeepSeekHarness 生命周期](imgs/40-06-sdk-lazy-lifecycle.png)
+![DeepSeekHarness 生命周期](imgs/40-06-sdk-lazy-lifecycle.webp)
 
 ## 最小用法与生命周期
 
@@ -82,7 +82,7 @@ with DeepSeekHarness() as harness:
 
 `DeepSeekHarness` 懒启动 runtime 子进程：第一次 `run()` 时才拉起，之后跨调用复用同一个进程，退出 with 块或显式调 `close()` 时清理。这个设计意味着反复发任务不会反复付启动成本，一次冷启动摊到整个程序生命周期里。批处理 100 个文件就是这样写的：一个 with 块里循环 100 次 `run()`，每次新的 session id，runtime 进程从头到尾只有一个。runtime 子进程继承你的环境变量，`DEEPSEEK_API_KEY` 和 `DEEPSEEK_BASE_URL` 直接透传给模型适配层，不需要在两套配置里各写一遍。
 
-![构造参数的去向](imgs/40-07-constructor-parameters.png)
+![构造参数的去向](imgs/40-07-constructor-parameters.webp)
 
 ### 构造参数
 
@@ -105,9 +105,9 @@ with DeepSeekHarness(
 
 逐个看语义。`provider` 选组合里注册的 provider 路由，捆绑默认组合注册的是 `deepseek-official`。`model` 是适配器解析的模型 id，它随每个会话的 initialize 请求经 JSON-RPC 传给 runtime，组合配置自己不钉模型；官方示例脚本 `minimal.py` 的解析顺序是命令行 `--model` 优先，然后 `DSH_MODEL` 环境变量，最后落到 `deepseek-v4-flash`。`max_tokens` 是可选的正整数，作为 root agent 及其进程内后代单次请求的输出 token 上限，不传就留给 provider 默认；压缩摘要不吃这个上限，摘要调用有自己的独立限额，来自压缩插件自己的配置。`cwd` 和 `runtime_cwd` 在子进程启动前就解析成绝对路径，再进环境注入和握手。`session_root` 是设置 `DSH_SESSION_ROOT` 的高层便捷参数；部署 persona 和持久化策略归 `cordis.yml` 管，不要塞进构造参数。`cordis` 指向你自己的组合配置文件。
 
-![RunResult 的六个字段](imgs/40-08-runresult-six-fields.png)
+![RunResult 的六个字段](imgs/40-08-runresult-six-fields.webp)
 
-![owned interval 时间边界](imgs/40-09-owned-interval-timeline.png)
+![owned interval 时间边界](imgs/40-09-owned-interval-timeline.webp)
 
 ### RunResult 的六个字段
 
@@ -121,7 +121,7 @@ with DeepSeekHarness(
 
 两个进阶出口。低层的 `HarnessClient.session_prompt()` 把消息入队后立刻返回 MessageId，不等结果；绕过 `Session.run()` 用它，活动边界的所有权就归你自己。协议侧的纪律是：一条 `turn/end` 缺了字符串形式的 `data.reason.kind` 就违反协议，SDK 直接抛 `SdkProtocolError`（`python/sdk/src/deepseek_harness/api.py` 的 `finish_reason` 里实现），不会静默吞掉畸形事件。错误类型一共四层：`HarnessError` 基类、`TransportClosedError`、`SdkProtocolError`、带 code 的 `JsonRpcError`，按故障位置选捕获层级。
 
-![子进程与协议的设计理由](imgs/40-10-subprocess-protocol-rationale.png)
+![子进程与协议的设计理由](imgs/40-10-subprocess-protocol-rationale.webp)
 
 ## 为什么是子进程加协议，不是原生绑定
 
@@ -133,7 +133,7 @@ with DeepSeekHarness(
 
 第三层是版本钉死。SDK 包和 runtime 包严格同版本发布，你 pip 装进来的就是你测过的，不存在"我机器上的 Node 版本和你不同导致行为漂移"这一整类问题。这也是捆绑单文件可执行文件的动机：把 Node 运行时、依赖闭包、ripgrep 边车全部封进一个产物，部署面上只剩一个变量，就是平台对不对。
 
-![CI 自动修测试走查](imgs/40-11-ci-integration-walkthrough.png)
+![CI 自动修测试走查](imgs/40-11-ci-integration-walkthrough.webp)
 
 ## 一次 CI 集成的完整走查
 
@@ -147,9 +147,9 @@ artifact 里的 JSONL 日志是这个方案真正的调试资产：每一次模�
 
 容器销毁，runtime 随之清理，没有状态残留。下次构建新容器、新 checkout、新 session id，从头来过。danger-full-access 在这个故事里不吓人，因为 agent 能碰到的"任何路径"就是一个用完即弃的 checkout，权限策略不需要精确，环境边界已经精确了。
 
-![SDK 配置注入规则](imgs/40-12-config-injection.png)
+![SDK 配置注入规则](imgs/40-12-config-injection.webp)
 
-![完整组合与 minimal 的差异](imgs/40-13-full-vs-minimal-composition.png)
+![完整组合与 minimal 的差异](imgs/40-13-full-vs-minimal-composition.webp)
 
 ## 配置注入的规则
 
@@ -182,7 +182,7 @@ runtime 继承的正常环境变量表：
 
 两个组合的差异在长任务上见分晓：完整组合跑到上下文吃紧会自动收窄历史，任务能继续；minimal 的会话会在窗口耗尽时撞上限，要么靠 `max_tokens` 限制单轮输出苟着，要么任务失败。跑长任务的自动化选组合时，把"有没有压缩插件"当成和"有哪些工具"同级的条件来筛，minimal 的极简是为了演示和测试的确定性，不是为了生产吞吐。
 
-![JSON-RPC stdio 管道纪律](imgs/40-14-jsonrpc-stdio-discipline.png)
+![JSON-RPC stdio 管道纪律](imgs/40-14-jsonrpc-stdio-discipline.webp)
 
 ## 自己写协议客户端要知道的事
 
@@ -194,7 +194,7 @@ runtime 继承的正常环境变量表：
 
 消费侧的语义照抄 SDK 的经验。prompt 入队拿到 MessageId 就返回，活动边界自己定义；`turn/end` 必须带字符串形式的 reason kind，缺了就是协议错误，按错误处理而不是跳过；通知流横跨 root 和全部后代，想看到 subagent 的动静就得消费通知，只盯响应会漏掉半棵进程树。仓库里 `examples/jsonrpc-agent/minimal.py` 是一个现成的最小驱动样本，命令行上直接给 workspace、session-root、session-id 和任务串就能跑，写客户端之前先读它，比从零猜协议形状快得多。
 
-![会话复用决策](imgs/40-15-session-reuse-decision.png)
+![会话复用决策](imgs/40-15-session-reuse-decision.webp)
 
 ## 什么时候复用会话，什么时候换新的
 
@@ -206,7 +206,7 @@ session 维度的决策规则一句话能说完：独立任务全新 id，继续
 
 判断的试金石是"这个任务需不需要知道上一个任务的任何事"。需要，复用；不需要，新开。拿不准就新开，会话日志按 id 各自落盘，事后要串联总能串，反过来想拆开一段被复用污染的会话就没有工具了。
 
-![隔离才是自动化安全边界](imgs/40-16-isolation-and-safety.png)
+![隔离才是自动化安全边界](imgs/40-16-isolation-and-safety.webp)
 
 ## 隔离与安全
 
@@ -218,7 +218,7 @@ workspace 维度：`cwd` 圈定 agent 可用的工作区，`session_root` 存会
 
 平台限制来自 PTY：持久 PTY backend 需要 POSIX terminal 环境，Windows 没有对应的 wheel，不是"不稳定"而是根本不发布。在 Windows 上用 SDK 要么换不依赖 PTY 的组合，要么进 WSL 或 Linux 容器。
 
-![平台覆盖与排障入口](imgs/40-17-platform-and-troubleshooting.png)
+![平台覆盖与排障入口](imgs/40-17-platform-and-troubleshooting.webp)
 
 ## 权衡
 
@@ -230,7 +230,7 @@ workspace 维度：`cwd` 圈定 agent 可用的工作区，`session_root` 存会
 
 排错时按故障位置选入口，三个入口对应三层。任务层的问题看 `finish_reason` 和会话 JSONL：error 或 max-tokens 都有完整的请求与工具调用记录可回放，`session_root` 目录就是现场。协议层的问题表现为 `SdkProtocolError`：turn 结束缺了规范的原因字段，这属于客户端和 runtime 之间的约定被破坏，查你的客户端有没有改写消息。启动层的问题进程直接起不来：配置缺失（没给 `DSH_CORDIS_CONFIG` 也没给位置参数）、运行时边车不完整、平台不在三个支持的组合里，都是启动期硬错误，报错信息直接说原因，不需要猜。
 
-![把 agent 编进流水线的总结](imgs/40-18-unified-tradeoff-summary.png)
+![把 agent 编进流水线的总结](imgs/40-18-unified-tradeoff-summary.webp)
 
 ## 结论
 

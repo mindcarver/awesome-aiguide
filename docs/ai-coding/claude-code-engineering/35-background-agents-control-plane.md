@@ -10,8 +10,8 @@
 
 Claude Code 里有三种容易混在一起的机制。
 
-<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/01-timeline-lifecycle-timeline.png -->
-![Notion 图解：先分清三种「后台」](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/01-timeline-lifecycle-timeline.png)
+<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/01-timeline-lifecycle-timeline.webp -->
+![Notion 图解：先分清三种「后台」](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/01-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 `claude agents` 打开 Agent View。这里的每一行都是完整会话，由本机每用户一个 supervisor 进程托管。会话可以脱离终端继续工作，也能重新附着到任意终端。该功能要求 Claude Code v2.1.139 或更高版本，官方标记为 Research Preview。
@@ -47,8 +47,8 @@ Remote Control 也不是后台执行器。它把本机正在运行的会话暴�
         独立上下文与工作树          独立上下文与工作树
 ```
 
-<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/02-infographic-concept-map.png -->
-![Notion 图解：控制面的真实组成](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/02-infographic-concept-map.png)
+<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/02-infographic-concept-map.webp -->
+![Notion 图解：控制面的真实组成](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/02-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 supervisor 与 Agent View 界面分离。关闭看板不会停止会话。状态默认保存在 `~/.claude/daemon/` 和 `~/.claude/jobs/<id>/`，可以用 `claude daemon status` 查看 supervisor 是否可达、版本和存活 worker 数量。
@@ -59,8 +59,8 @@ supervisor 与 Agent View 界面分离。关闭看板不会停止会话。状态
 
 先确认版本，再派发一个有明确完成条件的任务：
 
-<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/03-flowchart-operating-flow.png -->
-![Notion 图解：一套可验证的派发与接管流程](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/03-flowchart-operating-flow.png)
+<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/03-flowchart-operating-flow.webp -->
+![Notion 图解：一套可验证的派发与接管流程](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/03-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 ```bash
@@ -94,8 +94,8 @@ claude respawn 7c5dcf5d
 
 本机桌面通知适合权限请求和输入等待。以下 macOS 配置来自官方 Hooks 指南，加入 `~/.claude/settings.json` 后可用 `/hooks` 检查是否加载：
 
-<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/04-infographic-verification-guardrails.png -->
-![Notion 图解：通知应报告「需要人」，不应制造噪声](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/04-infographic-verification-guardrails.png)
+<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/04-infographic-verification-guardrails.webp -->
+![Notion 图解：通知应报告「需要人」，不应制造噪声](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/04-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 ```json
@@ -124,8 +124,8 @@ Remote Control 的移动推送适合离开电脑后的长任务。运行 `/remot
 
 睡眠期间，会话进程保留，机器唤醒后 supervisor 会重连。系统关机或重启会终止进程，Agent View 中的行会显示失败；对该行执行 attach、peek 或 reply 时，Claude Code 会从已保存对话重启处理。这里恢复的是会话记录和可达状态，不是把中断瞬间的进程、内存或正在执行的命令原样冻结后继续。
 
-<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/05-framework-system-framework.png -->
-![Notion 图解：长任务恢复到底恢复什么](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/05-framework-system-framework.png)
+<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/05-framework-system-framework.webp -->
+![Notion 图解：长任务恢复到底恢复什么](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/05-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 普通交互会话还可以通过名称或会话 ID 恢复：
@@ -142,8 +142,8 @@ claude --continue
 
 后台会话提高了吞吐量，也把注意力从单个终端转成调度问题。并发数越高，订阅额度、令牌和本机内存消耗越快。多个任务有文件交集时，即使自动工作树挡住了直接覆盖，最终合并仍会产生语义冲突。
 
-<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/06-comparison-boundary-comparison.png -->
-![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/06-comparison-boundary-comparison.png)
+<!-- wos:illustration claude-code-engineering/35-background-agents-control-plane/06-comparison-boundary-comparison.webp -->
+![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/35-background-agents-control-plane/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 Research Preview 意味着界面和快捷键可能变化。macOS 后台会话还有系统沙箱边界，例如不能读取 Desktop、Documents、Downloads，也不能访问本地网络主机。需要这些资源的任务应先验证环境，不要等跑了半小时才发现权限边界。

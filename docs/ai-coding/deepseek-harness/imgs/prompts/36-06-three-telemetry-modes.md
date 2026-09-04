@@ -1,6 +1,6 @@
 ---
 id: 36-06
-output: ../36-06-three-telemetry-modes.png
+output: ../36-06-three-telemetry-modes.webp
 aspect: 16:9
 style: notion
 watermark: false

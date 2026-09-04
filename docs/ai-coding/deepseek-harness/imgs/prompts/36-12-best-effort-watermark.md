@@ -1,6 +1,6 @@
 ---
 id: 36-12
-output: ../36-12-best-effort-watermark.png
+output: ../36-12-best-effort-watermark.webp
 aspect: 16:9
 style: notion
 watermark: false

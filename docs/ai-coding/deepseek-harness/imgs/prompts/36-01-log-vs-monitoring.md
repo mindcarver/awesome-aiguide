@@ -1,6 +1,6 @@
 ---
 id: 36-01
-output: ../36-01-log-vs-monitoring.png
+output: ../36-01-log-vs-monitoring.webp
 aspect: 16:9
 style: notion
 watermark: false

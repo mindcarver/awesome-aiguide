@@ -1,6 +1,6 @@
 ---
 id: 36-15
-output: ../36-15-what-leaves-machine.png
+output: ../36-15-what-leaves-machine.webp
 aspect: 16:9
 style: notion
 watermark: false

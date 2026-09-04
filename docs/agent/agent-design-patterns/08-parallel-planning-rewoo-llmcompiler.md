@@ -53,7 +53,7 @@ LLMCompiler 更像项目经理画了一张依赖图：
 
 REWOO 来自论文 *Decoupling Reasoning from Observations for Efficient Augmented Language Models*。它的核心流程是三步：
 
-![REWOO 模式架构](images/rewoo.png)
+![REWOO 模式架构](images/rewoo.webp)
 
 1. Planner 生成完整计划，把需要外部观察的位置标成 `[E1]`、`[E2]`。
 2. Worker 并行执行这些观察任务，填充占位符。
@@ -80,7 +80,7 @@ REWOO 的关键假设是：Planner 能提前判断需要哪些观察。如果计
 
 LLMCompiler 来自 *An Empirical Study on LLM Compiler*。它把任务拆成函数调用节点，再用有向无环图表示依赖。
 
-![LLMCompiler 模式架构](images/llmcompiler.png)
+![LLMCompiler 模式架构](images/llmcompiler.webp)
 
 ```python
 dag = {

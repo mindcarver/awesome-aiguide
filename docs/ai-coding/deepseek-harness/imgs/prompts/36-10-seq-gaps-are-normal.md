@@ -1,6 +1,6 @@
 ---
 id: 36-10
-output: ../36-10-seq-gaps-are-normal.png
+output: ../36-10-seq-gaps-are-normal.webp
 aspect: 16:9
 style: notion
 watermark: false

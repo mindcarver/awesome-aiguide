@@ -28,7 +28,7 @@ LATS 像同时尝试几种解题路线：一条路线用公式，一条路线画
 
 Basic Reflection 的结构最简单：
 
-![Basic Reflection 模式架构](images/basic_reflection.png)
+![Basic Reflection 模式架构](images/basic_reflection.webp)
 
 ```text
 Generator -> Draft
@@ -67,7 +67,7 @@ Basic Reflection 的主要风险是自嗨式审查。模型自己生成、自己
 
 Reflexion 来自论文 *Reflexion: Language Agents with Verbal Reinforcement Learning*。它不是只问“这次哪里不好”，而是把失败转成可复用的语言经验：
 
-![Reflexion 模式架构](images/reflexion.png)
+![Reflexion 模式架构](images/reflexion.webp)
 
 ```text
 Actor 执行任务
@@ -106,7 +106,7 @@ Reflexion 适合重复出现的任务：反复调试同一类测试失败、反�
 
 LATS 来自 *Language Agent Tree Search*。它把 Agent 的行动过程看成一棵树：
 
-![LATS 模式架构](images/lats.png)
+![LATS 模式架构](images/lats.webp)
 
 - 一个节点是一段 Thought-Action-Observation；
 - 一条路径是一种解法；

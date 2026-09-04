@@ -16,7 +16,7 @@ language: zh-CN
 **Purpose**: 作为公众号封面，先给出文章关于“像懂你”的核心解释。
 **Visual Content**: 当前对话、长期记忆、自定义指令和工具四张知识卡片，汇入一张回答卡片；以简短提示强调这不是读心。
 **Type Application**: framework
-**Filename**: 00-cover-context-not-mind-reading.png
+**Filename**: 00-cover-context-not-mind-reading.webp
 
 ## Illustration 1
 
@@ -24,7 +24,7 @@ language: zh-CN
 **Purpose**: 将文章的四种「懂」变成可见的输入来源。
 **Visual Content**: 当前对话、长期偏好、意图推断、规则边界四张卡片汇入一张回答卡片。
 **Type Application**: framework
-**Filename**: 01-framework-four-layers.png
+**Filename**: 01-framework-four-layers.webp
 
 ## Illustration 2
 
@@ -32,7 +32,7 @@ language: zh-CN
 **Purpose**: 表达一次回答前的上下文装配过程。
 **Visual Content**: 消息、聊天记录、指令、记忆、资料工具五类输入，经一个上下文托盘进入输出卡片。
 **Type Application**: flowchart
-**Filename**: 02-flowchart-context-assembly.png
+**Filename**: 02-flowchart-context-assembly.webp
 
 ## Illustration 3
 
@@ -40,7 +40,7 @@ language: zh-CN
 **Purpose**: 解释注意力的关系选择，而非字面比喻。
 **Visual Content**: 一串抽象 token 圆点中，当前输出位置以浅黄突出，几条不同粗细连线指向相关 token。
 **Type Application**: framework
-**Filename**: 03-framework-attention-links.png
+**Filename**: 03-framework-attention-links.webp
 
 ## Illustration 4
 
@@ -48,7 +48,7 @@ language: zh-CN
 **Purpose**: 区分当前对话、保存记忆、历史综合三种信息形态。
 **Visual Content**: 三个并列但不同形状的容器：短卷轴、便签卡、时间线档案；底部汇入一次任务。
 **Type Application**: comparison
-**Filename**: 04-comparison-memory-forms.png
+**Filename**: 04-comparison-memory-forms.webp
 
 ## Illustration 5
 
@@ -56,7 +56,7 @@ language: zh-CN
 **Purpose**: 呈现记忆的写入、更新、取回和遗忘循环。
 **Visual Content**: 从聊天气泡开始，经筛选、带日期的小卡片、相关任务取回、更新或删除的循环。
 **Type Application**: flowchart
-**Filename**: 05-flowchart-memory-lifecycle.png
+**Filename**: 05-flowchart-memory-lifecycle.webp
 
 ## Illustration 6
 
@@ -64,7 +64,7 @@ language: zh-CN
 **Purpose**: 解释长会话里状态漂移和主动重置的必要性。
 **Visual Content**: 左侧是不断堆叠的多色任务卡，线条变得凌乱；右侧是一张干净的当前状态卡，旧卡被归档。
 **Type Application**: comparison
-**Filename**: 06-comparison-context-drift.png
+**Filename**: 06-comparison-context-drift.webp
 
 ## Illustration 7
 
@@ -72,7 +72,7 @@ language: zh-CN
 **Purpose**: 区分事实、推断与待核实内容。
 **Visual Content**: 三层分拣台：有来源的文件夹、半透明推理卡、带问号的核验卡，最后汇入带放大镜的回答页。
 **Type Application**: framework
-**Filename**: 07-framework-evidence-boundary.png
+**Filename**: 07-framework-evidence-boundary.webp
 
 ## Illustration 8
 
@@ -80,7 +80,7 @@ language: zh-CN
 **Purpose**: 解释便利与隐私边界的可控取舍。
 **Visual Content**: 四个由开放到隔离的工作空间卡片，锁、眼睛、垃圾桶和时钟图标分别表达查看、授权、删除、过期。
 **Type Application**: framework
-**Filename**: 08-framework-privacy-controls.png
+**Filename**: 08-framework-privacy-controls.webp
 
 ## Illustration 9
 
@@ -88,7 +88,7 @@ language: zh-CN
 **Purpose**: 用工作日场景串起任务约束、记忆、工具与过期背景。
 **Visual Content**: 从上午短消息到下午客户邮件、晚上项目复盘、次日角色变化的四段时间线，最后加入最新数据工具。
 **Type Application**: timeline
-**Filename**: 09-timeline-working-day.png
+**Filename**: 09-timeline-working-day.webp
 
 ## Illustration 10
 
@@ -96,4 +96,4 @@ language: zh-CN
 **Purpose**: 给读者一个可执行的上下文写作框架。
 **Visual Content**: 一张主任务卡周围环绕受众、目标、禁区、时限、证据、状态重置六张小卡，用颜色和图标区分。
 **Type Application**: infographic
-**Filename**: 10-infographic-task-contract.png
+**Filename**: 10-infographic-task-contract.webp

@@ -1,6 +1,6 @@
 ---
 id: 36-18
-output: ../36-18-anonymous-resource-identity.png
+output: ../36-18-anonymous-resource-identity.webp
 aspect: 16:9
 style: notion
 watermark: false

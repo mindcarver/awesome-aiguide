@@ -6,8 +6,8 @@
 
 Auto-review 改变的是“谁来处理权限升级请求”，不会扩大沙箱权限，也不会替代代码审查、CI 或最终合并责任。可靠的审批链至少要拆成五层：沙箱限制动作范围，审批策略决定何时申请，自动审查器判断单次请求，`/review` 检查代码风险，维护者决定是否合并和发布。
 
-<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/01-framework-system-framework.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/01-framework-system-framework.png)
+<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/01-framework-system-framework.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/01-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 ## 读者定位
@@ -18,8 +18,8 @@ Auto-review 改变的是“谁来处理权限升级请求”，不会扩大沙�
 
 假设 Codex 在 `workspace-write` 沙箱中准备执行一个需要联网的命令。开启 Auto-review 后，流程不是“模型获得网络权限”，而是：
 
-<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/02-flowchart-operating-flow.png -->
-![Notion 图解：先纠正一个容易混淆的判断](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/02-flowchart-operating-flow.png)
+<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/02-flowchart-operating-flow.webp -->
+![Notion 图解：先纠正一个容易混淆的判断](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/02-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 ```text
@@ -48,8 +48,8 @@ OpenAI 将 Auto-review 定义为审批者替换。它只在 `on-request` 或 gra
 | 代码审查 | 改动是否正确、安全、可维护 | `/review`、CI、静态检查 | 发布授权 |
 | 人类责任 | 是否接受残余风险 | 合并、发布、回滚决策 | 无法转移的组织责任 |
 
-<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/03-infographic-verification-guardrails.png -->
-![Notion 图解：一条完整审批链包含什么](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/03-infographic-verification-guardrails.png)
+<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/03-infographic-verification-guardrails.webp -->
+![Notion 图解：一条完整审批链包含什么](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/03-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 自动化的价值在于压缩低风险请求的等待时间。最终责任没有随自动化转移。
@@ -58,8 +58,8 @@ OpenAI 将 Auto-review 定义为审批者替换。它只在 `on-request` 或 gra
 
 下面的用户配置启用可写工作区、按需审批和自动审查：
 
-<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/04-timeline-lifecycle-timeline.png -->
-![Notion 图解：最小配置与现场验证](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/04-timeline-lifecycle-timeline.png)
+<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/04-timeline-lifecycle-timeline.webp -->
+![Notion 图解：最小配置与现场验证](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/04-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 ```toml
@@ -105,8 +105,8 @@ Auto-review 的结果具有模型非确定性。相同请求在上下文变化�
 
 `/review` 会启动一个专门的审查代理读取 diff，并报告正确性、安全性和可维护性问题。审查过程本身不修改工作区。用户可以选择当前工作树、某个提交或与基线分支的差异。
 
-<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/05-comparison-boundary-comparison.png -->
-![Notion 图解：/review 与 Auto-review 不是一回事](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/05-comparison-boundary-comparison.png)
+<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/05-comparison-boundary-comparison.webp -->
+![Notion 图解：/review 与 Auto-review 不是一回事](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/05-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 当主代理根据审查结果修复代码时，新动作仍受原沙箱和审批策略约束。这形成了两个相互独立的闭环：
@@ -122,8 +122,8 @@ Auto-review 的结果具有模型非确定性。相同请求在上下文变化�
 
 可以按动作后果，而不是命令名称分级：
 
-<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/06-infographic-concept-map.png -->
-![Notion 图解：风险分级怎样落到审批链](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/06-infographic-concept-map.png)
+<!-- wos:illustration codex-engineering/48-auto-review-approval-chain/06-infographic-concept-map.webp -->
+![Notion 图解：风险分级怎样落到审批链](../../../assets/ai-coding-engineering-illustrations/codex-engineering/48-auto-review-approval-chain/06-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 1. 可逆且局限在工作区，例如读取文件、运行本地测试。让沙箱直接处理，保留日志即可。

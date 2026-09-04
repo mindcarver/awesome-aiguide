@@ -3,7 +3,7 @@
 > MCP 解决 agent 怎么接外部工具，ACP 解决 agent 怎么被外部程序驱动。dsh 在 ACP 里两侧都站：服务端把自己暴露成 ACP 服务器，任何兼容客户端都能创建会话、发提示、收结果；客户端一侧又能把外部 agent 当作子 agent 拉起。同一条 JSON-RPC 线，让 agent 变成可编程的自动化单元。
 > 服务端 `@deepseek-ai/dsh-acp` 是一个刻意做窄的自动化传输适配器：只输出已提交的完整答案，不做逐 token 流；权限只做一次性决策，不持久化授权；关闭时精确归属、不留孤儿。窄不是没做完，是给程序消费者的正确形状。截至 2026-08 的实现基于 `@agentclientprotocol/sdk` 0.25.1。
 
-![MCP 与 ACP 的两个协议方向](imgs/33-01-mcp-vs-acp.png)
+![MCP 与 ACP 的两个协议方向](imgs/33-01-mcp-vs-acp.webp)
 
 ## 两个协议，两个方向
 
@@ -15,9 +15,9 @@ ACP 由 Zed 编辑器团队在 2025 年推出，社区叫它"AI 编码 agent 的
 
 拿外设和服务打比方：MCP 是 agent 的 USB 接口，管外设标准；ACP 是 agent 的 HTTP API，管服务标准。dsh 两个都实现了，这篇讲第二个。顺带澄清一个常见的混淆：搜索 ACP 会同时出现 IBM 那套企业级 Agent Communication Protocol（多 agent 之间的 FIPA 风格消息传递），和这里说的 Zed Agent Client Protocol 是两个不相干的东西，dsh 实现的是后者。
 
-![dsh 在 ACP 服务端与客户端两侧](imgs/33-02-dsh-two-sides.png)
+![dsh 在 ACP 服务端与客户端两侧](imgs/33-02-dsh-two-sides.webp)
 
-![ACP automation-only 的暴露面](imgs/33-03-automation-only-scope.png)
+![ACP automation-only 的暴露面](imgs/33-03-automation-only-scope.webp)
 
 ## dsh 两侧都站
 
@@ -35,11 +35,11 @@ ACP 由 Zed 编辑器团队在 2025 年推出，社区叫它"AI 编码 agent 的
 
 还有一条硬纪律：stdout 被协议帧独占，诊断信息只能走 stderr。stdio 传输里混进一行日志就是一帧坏协议报文，这不是风格要求，是正确性要求。
 
-![initialize 的诚实能力声明](imgs/33-04-honest-initialize.png)
+![initialize 的诚实能力声明](imgs/33-04-honest-initialize.webp)
 
-![ACP 会话的完整生命周期](imgs/33-05-session-lifecycle.png)
+![ACP 会话的完整生命周期](imgs/33-05-session-lifecycle.webp)
 
-![prompt 的多模态准入](imgs/33-06-prompt-admission.png)
+![prompt 的多模态准入](imgs/33-06-prompt-admission.webp)
 
 ## 会话的一生
 
@@ -59,7 +59,7 @@ ACP 的中心概念是会话，外部客户端用它操作 agent 的完整生命
 
 通知是 `session/update`：每个已提交的 assistant 消息里，每个非空的文本或图片块发一个消息块通知，保持顺序。注意原料是已提交的消息，不是原始增量。图片在以内联 base64 交付前会从附件存储重新读取并校验完整性，一个已提交的图片丢了或坏了，prompt 以失败收场，不发占位图。
 
-![prompt 责任区间与 stopReason 优先级](imgs/33-07-stop-reason.png)
+![prompt 责任区间与 stopReason 优先级](imgs/33-07-stop-reason.webp)
 
 ## stopReason：一个 prompt 怎么结算
 
@@ -77,7 +77,7 @@ dsh 的一个 prompt 可能触发一串 turn：模型思考、调工具、再思
 
 再补一个并发维度的推论。每会话一个在途请求，意味着单个会话内的对话是严格串行的，想在多个项目上并行，就开多个会话：一个连接可以拥有多个会话，每个会话有自己的提示槽、工作区、取消路径和销毁器。四个项目并行修复，就是四次 `session/new`、四个不同 cwd、四条并行的 prompt 等待。会话之间互不牵连，一个会话出错不影响另外三个的结算，清理时也是各归各的销毁器。并发模型是一目了然的进程内多路复用，客户端不需要锁，要做的仅仅是别在同一个会话上发第二个请求。
 
-![committed-only 的确定性取舍](imgs/33-08-committed-only.png)
+![committed-only 的确定性取舍](imgs/33-08-committed-only.webp)
 
 ## committed-only：为什么不做逐 token 流
 
@@ -93,7 +93,7 @@ dsh 的一个 prompt 可能触发一串 turn：模型思考、调工具、再思
 
 线上没有的东西，去处要说清楚，不然 committed-only 听起来像信息丢失。推理过程、工具调用及其结果、计划、用量，全部在会话日志里，一条不少；示例组合还把每个会话持久化成 JSONL 文件（默认 zstd 压缩，快照模式用原始 JSONL），崩了、超时了、三个月后想审计了，拿日志重放就能还原当时发生了什么。线上传输和持久记录是两份不同的投影：前者给程序的决策循环，够用就好；后者给审计和排查，无损为准。选哪份看你的角色，写客户端看线上的终态，写事后分析看日志的全量。两条通道各司其职，比把全量信息挤上一根 stdio 管子健康得多。
 
-![allow_once 与 reject_once 的一次性权限](imgs/33-09-permission-once.png)
+![allow_once 与 reject_once 的一次性权限](imgs/33-09-permission-once.webp)
 
 ## 权限：一次性决策
 
@@ -103,7 +103,7 @@ dsh 的一个 prompt 可能触发一串 turn：模型思考、调工具、再思
 
 安全含义想清楚会出汗：自动化客户端天然是无人盯的，脚本被攻破或配置写错，都可能让一个错误的"允许"发出去。一次性决策把这个最坏情况控制在单次重试的范围内，下一次要提权，再问一次，再决策一次。持久授权换来的便利，在无人值守场景里就是把安全边界一次性交出去。
 
-![连接关闭的精确归属与排空](imgs/33-10-connection-drain.png)
+![连接关闭的精确归属与排空](imgs/33-10-connection-drain.webp)
 
 ## 优雅关闭：精确归属，不留孤儿
 
@@ -117,7 +117,7 @@ dsh 的一个 prompt 可能触发一串 turn：模型思考、调工具、再思
 
 还有一条对共享部署很重要：多个前端可以共享同一个运行时上下文，这个连接清理时，别的前端旗下的可续命子代理森林原封不动。反过来，一个只跑 ACP 的进程重载之后不留任何孤儿 agent。清理的边界画在"这个连接拥有的"上，不多销毁一个，也不漏掉一个。
 
-![acp-agent 的可运行组合堆栈](imgs/33-11-acp-agent-stack.png)
+![acp-agent 的可运行组合堆栈](imgs/33-11-acp-agent-stack.webp)
 
 ## acp-agent 示例：一行命令的可运行组合
 
@@ -129,7 +129,7 @@ dsh 的一个 prompt 可能触发一串 turn：模型思考、调工具、再思
 
 权限升级的完整闭环在这个示例里也能看到：`workspace-write` 档位下，模型的重试想要更宽的沙箱访问，触发一次权限请求，客户端程序化地选 `allow_once` 或 `reject_once`，关窗或不答按拒绝算，结果只作用于那次重试、走正常工具结果和审计路径。
 
-![CI 脚本的 ACP 完整往返](imgs/33-12-ci-round-trip.png)
+![CI 脚本的 ACP 完整往返](imgs/33-12-ci-round-trip.webp)
 
 ## 走一遍：一个 CI 脚本的完整往返
 
@@ -141,9 +141,9 @@ dsh 的一个 prompt 可能触发一串 turn：模型思考、调工具、再思
 
 异常分支同样明确。跑到一半流水线超时，脚本发取消，agent 被停，prompt 结算为 `cancelled`，没有迟到的用户消息污染会话日志。脚本退出、管道断开，清理流程四步走完，这个连接旗下的 agent 连同可续命的后代全部销毁，JSONL 日志留在磁盘上供事后追查。整个过程没有任何一步需要人盯屏幕，这就是 automation-only 的完整含义。
 
-![单会话串行与多会话并行](imgs/33-13-multi-session-parallel.png)
+![单会话串行与多会话并行](imgs/33-13-multi-session-parallel.webp)
 
-![Web UI、ACP 与网络服务的入口选择](imgs/33-14-entry-selection.png)
+![Web UI、ACP 与网络服务的入口选择](imgs/33-14-entry-selection.webp)
 
 ## 选哪条自动化入口
 
@@ -157,7 +157,7 @@ ACP 是进程级的标准入口。你的程序把 agent 当子进程拉起，用
 
 还有一层选型考虑是消费者身份。ACP 的客户端可以是另一个 agent，父 agent 拉起子 agent、交任务、收结果，这条嵌套路径和服务端是同一套协议。如果你的场景是 agent 编排而不是脚本编排，入口还是这个入口，只是调用方从 while 循环换成了另一个模型。
 
-![ACP 的刻意边界](imgs/33-15-acp-boundaries.png)
+![ACP 的刻意边界](imgs/33-15-acp-boundaries.webp)
 
 ## 权衡
 
@@ -173,7 +173,7 @@ ACP 是进程级的标准入口。你的程序把 agent 当子进程拉起，用
 
 这些边界共同的指向是同一个判断：它是自动化传输层，不是全能 UI。交互式渲染、人类提问、会话管理界面，属于 Web host 和客户端模块的地盘。把它当 agent 的自动化 API 用，每条限制都顺理成章；拿它当聊天界面用，每条都是缺陷。
 
-![ACP 自动化传输层的四条纪律](imgs/33-16-automation-summary.png)
+![ACP 自动化传输层的四条纪律](imgs/33-16-automation-summary.webp)
 
 ## 结论
 

@@ -2,7 +2,7 @@
 
 > dsh 让 agent 记住别的会话，靠三个方向不同的机制：`ctx.sessionQuery` 管跨会话检索，全文搜索加血缘追踪；`ctx.sessionProjections` 管派生状态，框架把日志 fold 成当前值实时推给客户端；`ctx.sessionReferenceResolver` 管快照注入，把另一个会话的内容带进当前消息。三者共享同一个根基：live-preferred 逻辑语料库，活的会话优先于持久化的，谁都不过量加载日志。每个机制各有一条不能破的纪律：query 永远是数据不是可执行语法，fold 必须纯且同步，注入的快照永远标记为不受信。
 
-![跨会话记忆的三种机制](imgs/28-01-three-memory-seams.png)
+![跨会话记忆的三种机制](imgs/28-01-three-memory-seams.webp)
 
 ## 为什么记忆是三个机制，不是一个
 
@@ -12,7 +12,7 @@
 
 拆分不等于各行其是。三个机制读的是同一份东西：live-preferred 逻辑语料库。
 
-![live-preferred 逻辑语料库](imgs/28-02-live-preferred-corpus.png)
+![live-preferred 逻辑语料库](imgs/28-02-live-preferred-corpus.webp)
 
 ## 共同地基：live-preferred 逻辑语料库
 
@@ -22,7 +22,7 @@
 
 事件层面也有一个统一的可见性分类 `SessionEventSurface`：`current` 是当前模型上下文，`shadowed` 是被替换掉的上下文，`log-only` 是只存在于原始日志里的事件。分类用的是和模型历史派生相同的 `foldSurface()` 转移。这条设计把"这个事件现在对模型可见吗"从一个需要追代码才能回答的问题，变成了记录上的一个属性。检索命中一条 `shadowed` 的事件时，调用方立刻知道它已经被压缩替换过，要去追替换链才能看到它现在的形态。
 
-![查询是数据而不是语法](imgs/28-03-query-as-data.png)
+![查询是数据而不是语法](imgs/28-03-query-as-data.webp)
 
 ## 检索：query 是数据，不是语法
 
@@ -34,7 +34,7 @@
 
 分页靠不透明游标。请求把游标绑死在归一化后的 query、元数据过滤和 limit 上：换任何一个，游标就失效，返回 `STALE_CURSOR` 而不是静默给出错位的结果。游标是品牌化的不透明类型，最后一页不带游标。确定性顺序也有约定：会话列表 newest-first，事件过滤按 seq 升序。翻页翻到的东西不会因为重排而抖动。
 
-![搜索范围、游标与索引](imgs/28-04-search-cursors-and-index.png)
+![搜索范围、游标与索引](imgs/28-04-search-cursors-and-index.webp)
 
 ## 过滤与"什么算可搜内容"
 
@@ -48,9 +48,9 @@
 
 这个全文索引在出货组合里是关着的。SQLite provider 的 `openAt` 配置有三个值：`startup`（插件默认，启动即建索引）、`first-search`（第一次搜索才建）、`never`（永不建，全文调用一律失败）。出货的 base 层配的是内存库加 `openAt: never`：宿主功能里真正消费检索的 `/resume` 走的是精确读和血缘，不需要全文；想要会话内容搜索的部署在自己的 patch 层改成 `first-search` 或 `startup`，通常配一个持久的数据库路径。被关着的时候全文调用返回 `SESSION_QUERY_SEARCH_DISABLED`，这是一个明确的运维开关，不是静默降级。
 
-![五个只读会话工具](imgs/28-05-five-query-tools.png)
+![五个只读会话工具](imgs/28-05-five-query-tools.webp)
 
-![检索工具的 opt-in 边界](imgs/28-06-opt-in-tooling.png)
+![检索工具的 opt-in 边界](imgs/28-06-opt-in-tooling.webp)
 
 ## 模型面向的工具：五个，且不随出货挂载
 
@@ -62,7 +62,7 @@
 
 这个消费方的交付姿态是明确的 opt-in。2026 年 8 月初的一次回调把它从共享 base 层的默认行里拿掉了：交付的 TUI、Web、无头界面都不挂载它，交付的 agent preset 也不含，五个 schema 和配套提示词段不进默认请求，模型没有要求过的"既往工作搜索工作流"教学不进提示词。挂载参考是 ACP 示例的一份组合文件，自定义部署照着挂，连超时和 spill 策略一起。这个决定被否掉的替代方案也记录在案：把 SQLite provider 一并移除（会破坏 `/resume` 和 Web 内容搜索框这两个宿主功能）、保留行但在每个 overlay 禁用（一行就能重新启用，违背 opt-in 立场）、只在 TUI 挂载（重新引入清单分裂）。
 
-![会话家谱与事件关系网](imgs/28-07-lineage-and-event-links.png)
+![会话家谱与事件关系网](imgs/28-07-lineage-and-event-links.webp)
 
 ## 血缘：会话的家谱与事件的替换链
 
@@ -74,7 +74,7 @@
 
 还有一条体贴的细节：读事件窗口返回的是 `SessionHeader`，不带可用性标志。一个已知活着的目标读事件，不需要关心持久化健康度。
 
-![投影的框架驱动与领域计算](imgs/28-08-projection-framework-fold.png)
+![投影的框架驱动与领域计算](imgs/28-08-projection-framework-fold.webp)
 
 ## 派生状态：框架驱动，领域计算
 
@@ -88,7 +88,7 @@
 
 还有一层身份声明值得说清楚：投影是可选能力接缝，不在 agent-loop 主干里。领域通过注入 `sessionProjections` 注册，一个没装配注册表的 headless 组合完全不受影响。
 
-![投影单元的同步纯 JSON 契约](imgs/28-09-projection-unit-contract.png)
+![投影单元的同步纯 JSON 契约](imgs/28-09-projection-unit-contract.webp)
 
 ## 单元契约与两条硬规矩
 
@@ -102,7 +102,7 @@
 
 比函数契约更深的一层是事件形状的规矩：一个带状态的日志事件携带变更后的完整状态，绝不是裸 delta。这条规矩的收益比"转移平凡地廉价"更实质。整值事件天然免疫乱序：每个值自带 seq，消费者比较 seq 就知道谁新谁旧，晚到的旧值覆盖不了新值。整值事件还自愈：错过一次更新没关系，下一个整值到达时自动纠正。设计提案里有一个被这条规矩直接删除的东西：invalidate/refetch 单元模式。那个模式存在的唯一理由就是伺候 delta 事件，goal 功能曾经为此维护过一个 refetch 循环、一套合并逻辑、一道防旧读的栅栏，换成整值事件之后三样全部消失。
 
-![同引用门与一致性切面](imgs/28-10-same-reference-consistency.png)
+![同引用门与一致性切面](imgs/28-10-same-reference-consistency.webp)
 
 ## 同引用零下游，与一致性切面
 
@@ -116,7 +116,7 @@
 
 检查点有一条容易踩的边界：`checkpoint(session)` 返回的每个 `val` 是脱离的 structured clone，绝不是活单元的引用。水印缓存是注册表唯一权威的可变状态，调用方如果通过检查点行改了它，后续所有快照和帧都会被污染。这条规矩把"检查点行只是快照"定死。
 
-![冷读阶梯与低一锚点](imgs/28-11-cold-read-low-one-anchor.png)
+![冷读阶梯与低一锚点](imgs/28-11-cold-read-low-one-anchor.webp)
 
 ## 冷读阶梯与低一锚点
 
@@ -135,7 +135,7 @@ restore 内部对行的可用性判定有三条：`ver` 匹配 `stateVersion`；
 
 `stateVersion` 是这套缓存的失效开关：序列化的状态字段或 fold 语义变了就 bump，旧版本单元持久化的行被丢弃，而不是被向前 apply 成垃圾。检查点时机有两个强制点：`turn/end` 和会话销毁，后者正是活转冷的时刻。两次之间靠节流的 write-behind 按计数和间隔触发。持久化全是 fail-soft：失败记个警告，缓存下次写或冷读时自愈。`write(session)` 在边界上给注册表切面做快照然后整条替换记录，它本身不是 fail-soft，fail-soft 由调用它的路径负责包住。设计对崩溃代价的总结很干脆：两次写之间崩掉，代价是一段更长的尾部重放，永远不会是一个错值。
 
-![Reference 的 host 适配器](imgs/28-12-reference-host-adapter.png)
+![Reference 的 host 适配器](imgs/28-12-reference-host-adapter.webp)
 
 ## 快照注入：host 适配器，不是 UI 语法
 
@@ -143,7 +143,7 @@ restore 内部对行的可用性判定有三条：`ver` 匹配 `stateVersion`；
 
 `SessionReferenceInput` 只有两个字段：`sessionId` 是权威的不透明身份，`label` 是可选的展示元数据，跟着进快照。id 说了算，label 只管好看。每个 host 的 mention 方言（@ 符号、补全交互、高亮样式）都留在 host 那一层，核心只认结构化的输入。
 
-![候选发现只读取会话封面](imgs/28-13-cover-only-candidates.png)
+![候选发现只读取会话封面](imgs/28-13-cover-only-candidates.webp)
 
 ## 候选发现不搜转录
 
@@ -151,7 +151,7 @@ restore 内部对行的可用性判定有三条：`ver` 匹配 `stateVersion`；
 
 最值得强调的还是那条否定性的规矩：候选发现绝不搜转录文本。列候选是个低门槛动作，用户在输入框里敲了两个字符就触发；如果这一步去搜每个会话的内容，别的会话的片段会以排名和标签的形式漏出来。把发现限制在 id、路径、标题这三个"封面字段"上，是个隐私和性能的双重边界：封面可以给人看，内容不行。
 
-![prepare 生成不受信快照](imgs/28-14-prepare-untrusted-snapshot.png)
+![prepare 生成不受信快照](imgs/28-14-prepare-untrusted-snapshot.webp)
 
 ## prepare：一次定向搬运
 
@@ -161,7 +161,7 @@ restore 内部对行的可用性判定有三条：`ver` 匹配 `stateVersion`；
 
 把快照装进 `UserMessage` 类型的 `additionalContext`，而不是合并进用户自己的内容，是个安全姿态。来自别的会话的内容，是在另一个上下文里生成的，不应该和当前会话里用户亲手敲的指令享受同等的信任。这和 web 抓取把非 2xx 当结果不当错误、code runtime 把程序输出当敌意输入，是同一族设计：外来内容降权处理。
 
-![三个机制在两个会话中协作](imgs/28-15-three-mechanisms-cooperation.png)
+![三个机制在两个会话中协作](imgs/28-15-three-mechanisms-cooperation.webp)
 
 ## 三个机制怎么协作
 
@@ -185,7 +185,7 @@ reference 有预算上限。引用一个超大会话可能被 `BUDGET_EXCEEDED` 
 
 三者共同的地基也有共同的软肋：live-preferred 意味着活会话优先，一个还在跑的会话的状态可能比它持久化的版本新，多数情况下这是对的（读到的更新），但活会话尚未持久化的那部分，进程崩了就没了。消费者拿到 `live: true, persisted: false` 的记录时，应该意识到这份新鲜是有条件的。
 
-![跨会话记忆的三句纪律](imgs/28-16-cross-session-summary.png)
+![跨会话记忆的三句纪律](imgs/28-16-cross-session-summary.webp)
 
 ## 结论
 

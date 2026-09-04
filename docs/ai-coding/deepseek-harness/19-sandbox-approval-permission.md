@@ -3,7 +3,7 @@
 > dsh 把"让 agent 安全操作真实机器"拆成三个各自独立、各自 fail-closed 的子系统：沙箱管文件效果的边界，审批管单次动作的放行，预设把前两个打包成用户能选的名字。三者没有谁能替代谁，也没有谁在拿不准时偷偷放行。两条最值得记住的纪律：沙箱的强制力是一个被报告的事实（full 或 partial），不是一句承诺，拿到 partial 的消费者必须拒绝或明示；一次审批只放行被问的那一个动作，审批系统本身坏了，默认结果是拒绝。
 > 被拒绝不是终点。沙箱拒绝会在输出里留下带模式名的标记和一条同轮次升级提示，模型可以带着理由对同一个动作重试一次更宽的模式，审批通过后更宽的策略只印在那一次调用上，不延续。这条链路的每一环都落在会话日志里，重放可以完整重建。
 
-![沙箱、审批与权限预设构成三个独立的安全子系统](imgs/19-01-three-subsystems.png)
+![沙箱、审批与权限预设构成三个独立的安全子系统](imgs/19-01-three-subsystems.webp)
 
 ## 三个问题，不是一个问题
 
@@ -25,7 +25,7 @@
 
 ### 三种模式，只管文件
 
-![read only、workspace write 与 full access 的文件访问模式](imgs/19-02-sandbox-modes.png)
+![read only、workspace write 与 full access 的文件访问模式](imgs/19-02-sandbox-modes.webp)
 
 模式只有三个值：`read-only`、`workspace-write`、`danger-full-access`。词表管的东西刻意收窄：只管文件系统效果，网络和进程可见性都在词表之外。一条 `curl` 把数据外发，或者 `ps` 看到别的进程，沙箱不管。收窄不是偷懒，是为了让"沙箱能不能挡住"这个问题有确定答案。一个什么都想管的围栏，结局是什么都管不全，使用者反而无法推理它的边界。
 
@@ -35,7 +35,7 @@
 
 ### 强制力是被报告的事实
 
-![后端强制力以 full 或 partial 作为必须消费的事实](imgs/19-03-enforcement-facts.png)
+![后端强制力以 full 或 partial 作为必须消费的事实](imgs/19-03-enforcement-facts.webp)
 
 整个沙箱设计最反常识的一点在这。强制力 `SandboxEnforcement` 只有两个值：full 和 partial。full 表示后端能管住这个模式承诺的全部文件效果；partial 表示当前后端或老内核只能管住一部分。
 
@@ -45,7 +45,7 @@ partial 不是理论上的客气话，三个主流平台各有具体出处。Lin
 
 ### 策略按调用解析，不写死在 provider 上
 
-![调用策略由单次升级、会话日志与部署默认逐层解析](imgs/19-06-policy-resolution.png)
+![调用策略由单次升级、会话日志与部署默认逐层解析](imgs/19-06-policy-resolution.webp)
 
 完整的执行策略是 `SandboxExecutionPolicy`，三个字段：mode、workspaceRoot、sessionId。每次调用，`ctx.sandboxPolicy.resolve()` 都重新解析一次，优先级是三层：显式批准的升级模式覆盖最高（升级重试时传入），其次是会话日志里最后一条 `sandbox/mode` 事件，最后落回部署默认值。
 
@@ -55,7 +55,7 @@ partial 不是理论上的客气话，三个主流平台各有具体出处。Lin
 
 ### confine：要么围栏，要么不跑
 
-![围栏不可用或不满足绝对边界要求时确定性拒绝](imgs/19-05-fail-closed.png)
+![围栏不可用或不满足绝对边界要求时确定性拒绝](imgs/19-05-fail-closed.webp)
 
 `ctx.sandbox.confine(argv, policy)` 返回替换用的 argv（围栏 runner 加配置，再加调用方原始的 argv），或者抛 `SandboxUnavailableError`，错误码 `SANDBOX_UNAVAILABLE`。契约里写死了一条不变量：对一个要求围栏的策略，静默的未围栏直通永远不合法。拿不到围栏就不跑，没有第三种结局。
 
@@ -75,7 +75,7 @@ partial 不是理论上的客气话，三个主流平台各有具体出处。Lin
 
 ### 三个后端的形状
 
-![Linux、macOS 与 Windows 后端通过同一 confine 契约报告强制力](imgs/19-04-platform-runners.png)
+![Linux、macOS 与 Windows 后端通过同一 confine 契约报告强制力](imgs/19-04-platform-runners.webp)
 
 Linux 链是 bwrap 探测在前、Landlock 在后。探测是功能性的：构建并强制一个真实 profile 而不是查 `--version`，所以"装了但被内核禁用"的 bwrap 会诚实探测失败，选择落到随包交付的 Landlock launcher。这个 launcher 是约 300 行的 C11 程序，直接使用 Landlock UAPI，除静态链接的 musl 外零依赖，源码在仓库 `native/landlock-run` 下与消费方同仓构建发布。它在限制前设置 `no_new_privs`，规则集跨 `execve` 继承；`--probe` 在一个短命子进程里强制最大规则集，只有内核确实强制时才以 0 退出。bwrap 后端从 2026 年 8 月起还会取消共享 PID 命名空间并挂载匹配的 procfs，因为宿主 `/proc/<pid>` 的魔法链接能绕过文件约束；Landlock 与 Seatbelt 则保持进程可见性不变。
 
@@ -83,7 +83,7 @@ Windows 档的机制值得单独说，因为它展示了一条完全不同的路
 
 ## 审批：一次动作的门
 
-![审批结果中只有 allowed once 放行，其余全部闭合为拒绝](imgs/19-07-approval-outcomes.png)
+![审批结果中只有 allowed once 放行，其余全部闭合为拒绝](imgs/19-07-approval-outcomes.webp)
 
 审批接缝回答"这一个具体动作，现在能不能放行"。它由 `packages/interaction/user-approval` 提供，服务是 `ctx.approval`。
 
@@ -97,7 +97,7 @@ Windows 档的机制值得单独说，因为它展示了一条完全不同的路
 
 ### ask 与 never
 
-![ask 分派 answerer 链，never 在扩展点之前拒绝](imgs/19-08-ask-never.png)
+![ask 分派 answerer 链，never 在扩展点之前拒绝](imgs/19-08-ask-never.webp)
 
 `ApprovalPolicy` 只有两个值，决定在交互式回答者出场之前发生什么。
 
@@ -107,7 +107,7 @@ Windows 档的机制值得单独说，因为它展示了一条完全不同的路
 
 ### 审计对与 turn 边界
 
-![approval asked 与 decided 事件在一个 turn 内以请求 id 配对](imgs/19-09-audit-pair.png)
+![approval asked 与 decided 事件在一个 turn 内以请求 id 配对](imgs/19-09-audit-pair.webp)
 
 `ctx.approval.request(req)` 要求请求的会话正处在一个打开的 turn 之内，空闲的询问在追加任何东西之前就直接拒绝。为什么卡这么死？因为一次审批必须留下两条审计事件：先 `approval/asked`，拿到结果后 `approval/decided`，两条事件靠一个本次询问新铸的 `ApprovalRequestId` 配对，这个品牌类型也让审批 id 没法和工具调用 id 或会话 id 互换。turn 的提交边界必须能把这对事件完整包住。如果任何一个事件的落盘在提交点之前失败，请求照样拒绝，因为返回一个没记进日志的决策，就破坏了审计对。事件已提交之后，观察者的失败由会话层兜住，不会反过来撤销已经成立的决策。
 
@@ -117,17 +117,17 @@ Windows 档的机制值得单独说，因为它展示了一条完全不同的路
 
 ## 升级：被拒绝之后怎么走
 
-![沙箱拒绝在决策点携带模式标记和升级提示](imgs/19-10-escalation-prompt.png)
+![沙箱拒绝在决策点携带模式标记和升级提示](imgs/19-10-escalation-prompt.webp)
 
-![升级只接受严格更宽的沙箱模式](imgs/19-11-strict-widening.png)
+![升级只接受严格更宽的沙箱模式](imgs/19-11-strict-widening.webp)
 
-![审批通过后更宽权限只作用于一次调用](imgs/19-12-allowed-once.png)
+![审批通过后更宽权限只作用于一次调用](imgs/19-12-allowed-once.webp)
 
-![升级重试必须作为新的工具调用记录到会话日志](imgs/19-13-no-auto-retry.png)
+![升级重试必须作为新的工具调用记录到会话日志](imgs/19-13-no-auto-retry.webp)
 
-![安全策略应在决策点呈现，而不是写成过时的系统提示](imgs/19-14-decision-context.png)
+![安全策略应在决策点呈现，而不是写成过时的系统提示](imgs/19-14-decision-context.webp)
 
-![子 agent 的审批策略固定为 never，并向父级上报限制](imgs/19-15-subagent-never.png)
+![子 agent 的审批策略固定为 never，并向父级上报限制](imgs/19-15-subagent-never.webp)
 
 fail-closed 描述的是静止状态，真实使用里更常见的是动态过程：agent 在 `workspace-write` 下跑得好好的，突然有一条命令确实需要写工作区外面。直接切会话模式太粗，切完还得切回来；什么都不做让命令一直报错，任务就卡死。dsh 的答案是升级链路，而且这套链路在 2026 年 7 月之后是 bash 和 fs 两个工具家族共享的：词汇、严格放宽表、参数配对校验、拒绝标记、升级提示、审批顺序，全部收在 `dsh-sandbox` 的 escalation 模块里，一个家让两家的审批顺序和错误文本不会漂移。
 
@@ -153,9 +153,9 @@ fail-closed 描述的是静止状态，真实使用里更常见的是动态过�
 
 ## 权限预设：不带强制力的打包
 
-![权限预设只打包两个底层开关，不拥有安全强制力](imgs/19-16-presets-thin.png)
+![权限预设只打包两个底层开关，不拥有安全强制力](imgs/19-16-presets-thin.webp)
 
-![custom 为推导状态，默认预设在新会话创建时被事件固定](imgs/19-17-custom-default.png)
+![custom 为推导状态，默认预设在新会话创建时被事件固定](imgs/19-17-custom-default.webp)
 
 预设层是最薄的一层。`ctx.permissionPresets` 把沙箱模式和审批策略这两个独立开关，打包成客户端能作为一个选择器展示的命名预设。
 
@@ -173,7 +173,7 @@ fail-closed 描述的是静止状态，真实使用里更常见的是动态过�
 
 ## 从头走一遍
 
-![有副作用工具调用从策略解析、围栏、审批到升级的全流程](imgs/19-18-full-journey.png)
+![有副作用工具调用从策略解析、围栏、审批到升级的全流程](imgs/19-18-full-journey.webp)
 
 把一次有副作用的工具调用从头串起来，看三个子系统各在哪一步出场。
 

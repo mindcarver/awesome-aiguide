@@ -10,8 +10,8 @@
 
 规则写在 CLAUDE.md：
 
-<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/01-infographic-verification-guardrails.png -->
-![Notion 图解：先做一次失败分析](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/01-infographic-verification-guardrails.png)
+<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/01-infographic-verification-guardrails.webp -->
+![Notion 图解：先做一次失败分析](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/01-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 ```markdown
@@ -39,8 +39,8 @@
           人和团队声明的项目事实、命令、约定
 ```
 
-<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/02-framework-system-framework.png -->
-![Notion 图解：四层策略栈](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/02-framework-system-framework.png)
+<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/02-framework-system-framework.webp -->
+![Notion 图解：四层策略栈](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/02-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 层级越高，不代表内容更「聪明」。第 1 至 3 层给模型材料，第 4 层在确定时间点运行控制逻辑。策略要按失败后果分配，不要把所有内容塞进一个大文件。
@@ -49,8 +49,8 @@
 
 CLAUDE.md 适合放团队希望每次会话都看见的事实：构建命令、目录边界、代码约定、审查流程。项目根文件在启动时加载，嵌套 CLAUDE.md 会在 Claude 读取对应子树文件时延迟加载。`@path` 导入有助于组织内容，但导入文件仍会进入上下文，不会节省令牌。
 
-<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/03-flowchart-operating-flow.png -->
-![Notion 图解：CLAUDE.md：人负责维护的公开约定](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/03-flowchart-operating-flow.png)
+<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/03-flowchart-operating-flow.webp -->
+![Notion 图解：CLAUDE.md：人负责维护的公开约定](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/03-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 一份克制的项目文件可以是：
@@ -81,8 +81,8 @@ CLAUDE.md 适合放团队希望每次会话都看见的事实：构建命令、�
 
 Auto Memory 从 v2.1.59 起可用，默认开启。Claude 自行判断哪些构建命令、排障发现和偏好值得跨会话保存。每个 Git 仓库的默认目录是：
 
-<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/04-infographic-concept-map.png -->
-![Notion 图解：Auto Memory：机器本地的经验索引](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/04-infographic-concept-map.png)
+<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/04-infographic-concept-map.webp -->
+![Notion 图解：Auto Memory：机器本地的经验索引](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/04-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 ```text
@@ -110,8 +110,8 @@ Auto Memory 的内容可读、可改、可删。它适合记录「这个仓库�
 
 主会话 Auto Memory 不会自动加载给普通 Subagent。fork 是例外，因为它继承父上下文。需要让 `code-reviewer` 长期积累审查模式时，在 Agent frontmatter 里声明：
 
-<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/05-timeline-lifecycle-timeline.png -->
-![Notion 图解：Subagent Memory：给角色一块独立笔记本](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/05-timeline-lifecycle-timeline.png)
+<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/05-timeline-lifecycle-timeline.webp -->
+![Notion 图解：Subagent Memory：给角色一块独立笔记本](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/05-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 ```markdown
@@ -195,8 +195,8 @@ printf '%s\n' '{"tool_input":{"command":"git push --force origin main"}}' \
 
 同一句规则不要在 CLAUDE.md、Auto Memory 和多个 Agent Memory 中复制。副本会漂移，也会浪费上下文。团队约定留在 CLAUDE.md；自动发现留在 Auto Memory；角色经验留在对应 Subagent Memory；不可违反的动作写成权限或 Hook。
 
-<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/06-comparison-boundary-comparison.png -->
-![Notion 图解：组合时最容易踩的边界](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/06-comparison-boundary-comparison.png)
+<!-- wos:illustration claude-code-engineering/38-memory-and-enforcement/06-comparison-boundary-comparison.webp -->
+![Notion 图解：组合时最容易踩的边界](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/38-memory-and-enforcement/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 公开 issue 记录过 Subagent 工具调用没有触发父会话 Hook 的版本问题，例如 issue #34692 报告的是 Claude Code v2.1.76。当前官方文档支持在自定义 Subagent frontmatter 内声明 `hooks:`。安全要求不能依赖「应该继承」，应在目标版本用 `/hooks`、无害测试输入和真实 Agent 调用路径验证覆盖率。这里引用 issue 是为了说明版本与作用域风险，不把它当成当前版本必然存在的事实。

@@ -1,6 +1,6 @@
 ---
 id: 36-14
-output: ../36-14-crash-detection-by-mode.png
+output: ../36-14-crash-detection-by-mode.webp
 aspect: 16:9
 style: notion
 watermark: false

@@ -4,8 +4,8 @@
 
 ChatGPT 桌面应用把 Codex、Browser、Computer Use、PR review、Sites 和 Visualizations 放进同一工作区，但它们不是一条权限相同的流水线。Browser 操作网页，Computer Use 操作桌面 GUI，PR Chat 围绕 GitHub diff 与评论协作，Sites 发布托管应用，Visualizations 生成可交互的解释结果。
 
-<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/01-infographic-verification-guardrails.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/01-infographic-verification-guardrails.png)
+<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/01-infographic-verification-guardrails.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/01-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 选错执行面会增加风险。能用 Git diff 核验的改动不要只看 GUI，能用 Browser 完成的网页任务不要扩大到整台桌面，Sites 的每个部署 URL 都是生产部署，Visualization 通常只是生成时刻的数据快照。
@@ -26,8 +26,8 @@ ChatGPT 桌面应用把 Codex、Browser、Computer Use、PR review、Sites 和 V
 | Sites | 兼容项目与托管环境 | 保存版本、部署、访问范围、环境变量 | 已批准版本、生产 URL、访问测试 |
 | Visualizations | 聊天中的数据和说明 | 生成图表、地图、计算器或交互解释 | 数据、单位、交互和可访问性检查 |
 
-<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/02-framework-system-framework.png -->
-![Notion 图解：五个执行面放在一张图里](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/02-framework-system-framework.png)
+<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/02-framework-system-framework.webp -->
+![Notion 图解：五个执行面放在一张图里](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/02-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 桌面应用是控制台，不是统一事务。一次任务跨越多个执行面时，不会自动获得端到端回滚。Browser 已提交表单、Computer Use 已改应用设置、Git 工作树却回退成功，外部状态仍然存在。
@@ -36,8 +36,8 @@ ChatGPT 桌面应用把 Codex、Browser、Computer Use、PR review、Sites 和 V
 
 内置 Browser 使用独立于日常浏览器的 profile，不会自动共享现有 tab 和登录会话。需要账号时可以在该 profile 登录。若任务必须使用你已经登录的 Chrome 页面，应使用 Chrome extension，而不是假设内置 Browser 能看到它。
 
-<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/03-flowchart-operating-flow.png -->
-![Notion 图解：Browser：网页任务的窄入口](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/03-flowchart-operating-flow.png)
+<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/03-flowchart-operating-flow.webp -->
+![Notion 图解：Browser：网页任务的窄入口](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/03-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 Browser 适合检查本地页面、复现前端问题、收集公开资料和完成范围清楚的网站流程。官方文档建议给出 URL、关注状态和具体元素，并在 Codex 完成后重新检查页面。
@@ -67,8 +67,8 @@ macOS 的 locked use 可在屏幕锁定后继续受信任的 Computer Use turn�
 
 2026-07-09 的 changelog 加入 PR Chat。它让开发者在桌面应用中查看 GitHub PR、询问改动、发送行内反馈，并编辑、接受或拒绝候选 patch。
 
-<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/04-timeline-lifecycle-timeline.png -->
-![Notion 图解：PR Chat：对话必须落回 Git 证据](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/04-timeline-lifecycle-timeline.png)
+<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/04-timeline-lifecycle-timeline.webp -->
+![Notion 图解：PR Chat：对话必须落回 Git 证据](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/04-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 当前官方 Code review 文档给出更具体的依赖：项目必须是 Git 仓库；若要加载 PR 上下文、评论和 changed files，需要安装并认证 GitHub CLI。
@@ -89,8 +89,8 @@ PR Chat 的结束条件不是对话里出现「已修复」。检查目标评论
 
 Sites 可以从 prompt 或兼容本地项目创建并托管网站、Web app 和游戏。它目前是 public beta，额度、地区、套餐和工作区设置都会影响可用性。Codex CLI 和 IDE 扩展没有独立 Sites 管理界面，发布管理要在 ChatGPT Web 或桌面应用完成。
 
-<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/05-infographic-concept-map.png -->
-![Notion 图解：Sites：保存版本与部署是两个动作](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/05-infographic-concept-map.png)
+<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/05-infographic-concept-map.webp -->
+![Notion 图解：Sites：保存版本与部署是两个动作](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/05-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 最容易误判的细节是：每个 Sites deployment URL 都是生产部署。想先审查时，应保存版本但不部署。官方文档把流程拆成 Save a version 和 Deploy a version，前者生成可审查候选，后者才发布并返回生产 URL。
@@ -103,8 +103,8 @@ Sites 适合原型、内部工具和范围明确的小型托管体验。需要�
 
 Visualizations 能生成图表、地图、图解、计算器和模拟器。桌面端目前处于 preview 滚动发布，可用性取决于计划、平台、账号和工作区。Codex 0.145.0 为终端 UI 加入安全的可点击链接，把生成的 HTML 放进受限查看器并交给浏览器打开；这是一条终端降级路径，不代表 TUI 原生嵌入了交互组件。IDE 扩展仍应按官方文档声明的支持面判断。
 
-<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/06-comparison-boundary-comparison.png -->
-![Notion 图解：Visualizations：可交互结果不是实时事实源](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/06-comparison-boundary-comparison.png)
+<!-- wos:illustration codex-engineering/42-app-browser-review-visualization/06-comparison-boundary-comparison.webp -->
+![Notion 图解：Visualizations：可交互结果不是实时事实源](../../../assets/ai-coding-engineering-illustrations/codex-engineering/42-app-browser-review-visualization/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 Visualization 适合让读者调整输入或观察关系。它不适合承担唯一审计记录。官方文档说明，这类结果通常是创建时信息的快照，不会持续与连接的数据源同步。后续 prompt 也可能生成替代版本，而不是原地修改旧结果。

@@ -5,9 +5,9 @@
 
 ## 为什么 agent 要写代码并执行
 
-![多次工具往返与一次程序编排的对比](imgs/23-01-program-orchestration.png)
+![多次工具往返与一次程序编排的对比](imgs/23-01-program-orchestration.webp)
 
-![Code Runtime 与 Code Mode 分层并让子调用保持策略管线](imgs/23-02-runtime-mode-layers.png)
+![Code Runtime 与 Code Mode 分层并让子调用保持策略管线](imgs/23-02-runtime-mode-layers.webp)
 
 agent 调工具，默认是一次调一个：读个文件、跑条命令、改段代码。每一步都要模型想一下、发一个 tool call、等结果回来、再想下一步。对"把这个函数的用法总结一下"这类任务，这个节奏没问题。但对"把 30 个文件里的日期格式统一改掉"就不一样了：模型要在上下文里维护一份进度表，改完第 17 个文件时它得还记得第 3 个文件的教训，任何一步的往返都可能让中间状态溜走。每一步都有代价，不只是时间，还有模型注意力的消耗。
 
@@ -19,7 +19,7 @@ agent 调工具，默认是一次调一个：读个文件、跑条命令、改�
 
 ## 底层接缝只做一件事
 
-![ctx.codeRuntime 的 run、language 与 isolation 三项契约](imgs/23-03-runtime-contract.png)
+![ctx.codeRuntime 的 run、language 与 isolation 三项契约](imgs/23-03-runtime-contract.webp)
 
 `ctx.codeRuntime` 定义在 `packages/code-runtime/code-runtime`，是一个可选能力，不在 agent-loop 主干里。没有它，agent 照常工作；装配了它，消费者才谈得上跑代码。这个定位和沙箱、审批一样：能力以接缝形式存在，谁需要谁来消费。
 
@@ -29,7 +29,7 @@ agent 调工具，默认是一次调一个：读个文件、跑条命令、改�
 
 ### 请求带一切，结果报告一切
 
-![程序运行请求由 program、bindings 和 signal 共同构成](imgs/23-04-run-request.png)
+![程序运行请求由 program、bindings 和 signal 共同构成](imgs/23-04-run-request.webp)
 
 一次运行从 `run()` 收到的请求说起。`program` 是程序源码，它会被当作一个 async 函数的函数体执行，所以顶层 `await` 和 `return` 都可用，`return` 的完成值就是结果的 `value`。`bindings` 是宿主提供的函数列表，每个命名空间在程序里变成一个全局对象。`signal` 可选，触发时运行时硬停程序，哪怕它正卡在循环中途。
 
@@ -39,7 +39,7 @@ agent 调工具，默认是一次调一个：读个文件、跑条命令、改�
 
 ### 错误是字段，不是异常
 
-![CodeRunResult 以字段统一报告成功与失败](imgs/23-05-result-not-exception.png)
+![CodeRunResult 以字段统一报告成功与失败](imgs/23-05-result-not-exception.webp)
 
 结果是这一层最重要的契约。`CodeRunResult` 把成功和失败都放在同一个结构里：`value` 是完成值，只有程序跑完且完成值跨过了无损 JSON 边界才存在；`logs` 是程序打印的文本，按顺序；`error` 是失败详情，失败时才有。一个失败的程序是一次正常返回的结果，不是 `run()` 的 rejection。`run()` 只在调用方误用契约时才拒绝，比如传了重复的绑定命名空间。
 
@@ -51,7 +51,7 @@ agent 调工具，默认是一次调一个：读个文件、跑条命令、改�
 
 ## 三条预算加一条内存线，各管一件事
 
-![compute、wall、output 和 heap 四条独立资源边界](imgs/23-06-resource-budgets.png)
+![compute、wall、output 和 heap 四条独立资源边界](imgs/23-06-resource-budgets.webp)
 
 运行时的资源纪律用三条预算表达，每条管一个维度，互不代偿。worker-thread 实现的默认值：忙时预算 60 秒，墙钟预算 600 秒，输出上限 64MiB，另有一条给 worker 的老生代堆内存资源线，默认 512MiB。
 
@@ -65,7 +65,7 @@ agent 调工具，默认是一次调一个：读个文件、跑条命令、改�
 
 ## 绑定：宿主函数变成程序全局
 
-![宿主绑定以安全的 tools 全局对象进入程序](imgs/23-07-safe-bindings.png)
+![宿主绑定以安全的 tools 全局对象进入程序](imgs/23-07-safe-bindings.webp)
 
 绑定是宿主和程序之间的桥。每个命名空间在程序里变成一个全局对象，对象里是一组 async 函数；Code Mode 的消费者传的就是一个叫 `tools` 的命名空间，于是程序里能写 `await tools.read({...})`。函数的参数和返回值必须是无损 JSON，可能经过结构化克隆跨越序列化边界，过不了的值会被拒绝并给出描述性错误，而不是让运行坏在半路。
 
@@ -79,7 +79,7 @@ agent 调工具，默认是一次调一个：读个文件、跑条命令、改�
 
 ## 失败分类：六种正交结果
 
-![六类运行失败各自对应不同恢复路径](imgs/23-08-six-failure-kinds.png)
+![六类运行失败各自对应不同恢复路径](imgs/23-08-six-failure-kinds.webp)
 
 `CodeRunFailure` 的 kind 是六种正交、独立报告的结果。正交的意思是各管各的事实，不嵌套：预算到期不是异常，中止不是超时，底质死亡两者都不是。来源是 defensive patterns 里的一条原则：一个结果可以同时是几件事，进程可能超时了但 exit 0，因为它捕获了信号；把每个独立事实摆在自己的字段上，调用方才不会把一次被截断的运行误读成成功。
 
@@ -96,9 +96,9 @@ agent 调工具，默认是一次调一个：读个文件、跑条命令、改�
 
 ## Code Mode：把工具交到程序手里
 
-![native、code 与 both 三种工具入口模式](imgs/23-09-code-mode-switch.png)
+![native、code 与 both 三种工具入口模式](imgs/23-09-code-mode-switch.webp)
 
-![SDK 与 run_code 描述随 TypeScript 或 Python 运行时一致分发](imgs/23-10-language-sdk-dispatch.png)
+![SDK 与 run_code 描述随 TypeScript 或 Python 运行时一致分发](imgs/23-10-language-sdk-dispatch.webp)
 
 理解了底层，Code Mode 就好讲了：它是 `ctx.codeRuntime` 的一个消费者，把工具注册表里的工具包装成 `tools` 绑定命名空间，让模型写的程序能够调用。
 
@@ -112,11 +112,11 @@ TypeScript 形态下，每个可见工具的参数 schema 被翻译成 TypeScrip
 
 ## 子调用走完整管线
 
-![外层 run_code 与每一项子调用穿过相同策略管线](imgs/23-11-subcall-full-pipeline.png)
+![外层 run_code 与每一项子调用穿过相同策略管线](imgs/23-11-subcall-full-pipeline.webp)
 
-![策略拒绝以 ToolCallError 回到程序的 catch 分支](imgs/23-12-tool-call-error.png)
+![策略拒绝以 ToolCallError 回到程序的 catch 分支](imgs/23-12-tool-call-error.webp)
 
-![并行安全调用与独占调用屏障复用原生调度约定](imgs/23-13-parallel-subcalls.png)
+![并行安全调用与独占调用屏障复用原生调度约定](imgs/23-13-parallel-subcalls.webp)
 
 Code Mode 的核心规矩前面说过：程序里的每个工具子调用，走和顶层调用一样的管线。展开讲有四条。
 
@@ -132,7 +132,7 @@ Code Mode 的核心规矩前面说过：程序里的每个工具子调用，走�
 
 ## 子调用的日志副本也要过 spill
 
-![大子调用日志经过 spill 而不撑爆会话日志](imgs/23-14-dispatch-log-spill.png)
+![大子调用日志经过 spill 而不撑爆会话日志](imgs/23-14-dispatch-log-spill.webp)
 
 2026 年 7 月底补上的一块值得单独讲。子调用的派发事件最初连完整内容进日志，没有任何上限：一个读大文件的程序，会把完整渲染文本写进会话日志，每个受影响的轮次让 JSONL 增长数 MB。原生工具结果在记录前本来就有内联上限，两类结果受到不同处理，而批量数据工作恰恰最容易产生巨大结果。
 
@@ -140,7 +140,7 @@ Code Mode 的核心规矩前面说过：程序里的每个工具子调用，走�
 
 ## TypeScript 怎么跑起来
 
-![TypeScript 后端以每次新建的 Worker 和敌意端口验证执行](imgs/23-15-fresh-worker-runtime.png)
+![TypeScript 后端以每次新建的 Worker 和敌意端口验证执行](imgs/23-15-fresh-worker-runtime.webp)
 
 已发布的后端是 worker-thread provider，它处理 TypeScript 的方式值得一看，因为每个选择都对应一类故障的预防。
 
@@ -168,7 +168,7 @@ Code Mode 的核心规矩前面说过：程序里的每个工具子调用，走�
 
 ## 安全边界到底在哪
 
-![Worker 只是遏制手段，审批和沙箱才是强制安全边界](imgs/23-16-security-boundary-summary.png)
+![Worker 只是遏制手段，审批和沙箱才是强制安全边界](imgs/23-16-security-boundary-summary.webp)
 
 最后回到 `isolation` 那个悬着的问题。
 

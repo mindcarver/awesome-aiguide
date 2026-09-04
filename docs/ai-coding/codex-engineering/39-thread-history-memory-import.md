@@ -4,8 +4,8 @@
 
 Codex 的 Thread History、持久名称、Memory 和导入功能解决的是四类问题。线程历史保存可恢复的工作记录，名称帮助人找到线程，Memory 从旧工作中提炼可复用信息，Import 把受支持的外部 Agent 设置和近期会话带进 Codex。它们互相配合，却不能互相替代。
 
-<!-- wos:illustration codex-engineering/39-thread-history-memory-import/01-timeline-lifecycle-timeline.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/01-timeline-lifecycle-timeline.png)
+<!-- wos:illustration codex-engineering/39-thread-history-memory-import/01-timeline-lifecycle-timeline.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/01-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 截至 2026-07-22，Codex 0.145.0 已把 `/import` 扩展到 Cursor 和 Claude Code，可迁移 settings、MCP servers、plugins、sessions、commands 与项目级 memories。App Server 的分页线程历史仍是实验性接口。本机安装的 `codex-cli 0.144.5` 早于这次发布，不能用它缺少 Cursor 导入来否定 0.145.0 的行为。
@@ -20,8 +20,8 @@ Codex 的 Thread History、持久名称、Memory 和导入功能解决的是四�
 
 可以把一个长期开发任务想成搬家时的四个盒子。
 
-<!-- wos:illustration codex-engineering/39-thread-history-memory-import/02-infographic-concept-map.png -->
-![Notion 图解：先分清四个盒子](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/02-infographic-concept-map.png)
+<!-- wos:illustration codex-engineering/39-thread-history-memory-import/02-infographic-concept-map.webp -->
+![Notion 图解：先分清四个盒子](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/02-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 聊天记录装的是过程。你问过什么，Codex 做过什么，工具返回了什么，都属于线程历史。
@@ -38,8 +38,8 @@ Codex 的 Thread History、持久名称、Memory 和导入功能解决的是四�
 
 稳定的用户入口是恢复、分叉、归档和取消归档。下面这些命令来自本机 CLI 帮助，可以直接验证：
 
-<!-- wos:illustration codex-engineering/39-thread-history-memory-import/03-flowchart-operating-flow.png -->
-![Notion 图解：Thread History 怎样恢复任务](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/03-flowchart-operating-flow.png)
+<!-- wos:illustration codex-engineering/39-thread-history-memory-import/03-flowchart-operating-flow.webp -->
+![Notion 图解：Thread History 怎样恢复任务](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/03-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 ```bash
@@ -78,8 +78,8 @@ App Server 的 `thread/name/set` 可以给已加载线程或磁盘中的 rollout
 
 官方文档给出的边界很清楚：ChatGPT Web 使用 ChatGPT Memory，本地 Codex 客户端使用单独的本地 Memory 存储。IDE 扩展连接哪个 Codex host，就使用哪个 host 的本地 Memory。
 
-<!-- wos:illustration codex-engineering/39-thread-history-memory-import/04-comparison-boundary-comparison.png -->
-![Notion 图解：Memory 是召回层，不是规则层](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/04-comparison-boundary-comparison.png)
+<!-- wos:illustration codex-engineering/39-thread-history-memory-import/04-comparison-boundary-comparison.webp -->
+![Notion 图解：Memory 是召回层，不是规则层](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/04-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 在支持的版本中，可用 `/memories` 控制当前会话能否读取已有 Memory，以及它是否能成为未来 Memory 的输入。Memory 文件默认位于 `~/.codex/memories/`。后台生成会跳过仍活跃或太短的会话，临近用量上限时也可能暂不运行，所以关闭聊天后看不到立刻更新是正常机制，不是必然故障。
@@ -104,8 +104,8 @@ disable_on_external_context = true
 
 Codex 0.145.0 的官方 release 明确写入两种来源：Cursor 和 Claude Code。`/import` 可迁移 settings、MCP servers、plugins、sessions、commands 与项目级 memories。Cursor 支持 PR `#33426` 给出的实现范围更细，包括 sandbox permissions、project instructions、hooks、agents 和 recent chat sessions；同时检测到两种来源时，流程会先要求选择来源。
 
-<!-- wos:illustration codex-engineering/39-thread-history-memory-import/05-infographic-verification-guardrails.png -->
-![Notion 图解：/import 究竟从 Claude Code 和 Cursor 搬了什么](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/05-infographic-verification-guardrails.png)
+<!-- wos:illustration codex-engineering/39-thread-history-memory-import/05-infographic-verification-guardrails.webp -->
+![Notion 图解：/import 究竟从 Claude Code 和 Cursor 搬了什么](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/05-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 在 0.145.0 或更新版本中，进入交互式 Codex 后启动导入：
@@ -134,8 +134,8 @@ Codex 0.145.0 的官方 release 明确写入两种来源：Cursor 和 Claude Cod
 
 0.145.0 会检测受支持的 Cursor 配置、规则、MCP、hooks、agents、commands、plugins 和近期聊天，再转换到 Codex 对应结构。导入 sessions 的含义是把可迁移会话转换进目标系统，不等于恢复原 Cursor 进程、终端、浏览器登录态或未落盘内存。
 
-<!-- wos:illustration codex-engineering/39-thread-history-memory-import/06-framework-system-framework.png -->
-![Notion 图解：Cursor 有原生导入，仍要做语义验收](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/06-framework-system-framework.png)
+<!-- wos:illustration codex-engineering/39-thread-history-memory-import/06-framework-system-framework.webp -->
+![Notion 图解：Cursor 有原生导入，仍要做语义验收](../../../assets/ai-coding-engineering-illustrations/codex-engineering/39-thread-history-memory-import/06-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 迁移后逐项核对三类语义差异：

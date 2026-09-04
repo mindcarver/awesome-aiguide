@@ -1,6 +1,6 @@
 ---
 id: 36-04
-output: ../36-04-stop-at-emit.png
+output: ../36-04-stop-at-emit.webp
 aspect: 16:9
 style: notion
 watermark: false

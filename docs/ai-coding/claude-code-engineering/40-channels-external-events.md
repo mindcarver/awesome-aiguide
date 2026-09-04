@@ -6,8 +6,8 @@
 
 Channels 不是任务队列，也不是托管在云端的常驻 Agent。它是一条 MCP 通知通道：本机 Channel 服务器接收聊天消息、Webhook 或其他事件，再把事件推入一个已经启动且启用了该 Channel 的 Claude Code 会话。
 
-<!-- wos:illustration claude-code-engineering/40-channels-external-events/01-timeline-lifecycle-timeline.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/01-timeline-lifecycle-timeline.png)
+<!-- wos:illustration claude-code-engineering/40-channels-external-events/01-timeline-lifecycle-timeline.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/01-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 适合它的场景是“让当前 Agent 对外部变化立即反应”，例如构建失败后继续排查、在 Telegram 中补充上下文、由内部告警触发诊断。若需求是关机后仍执行、失败后自动重试、严格保证每个事件只处理一次，应在 Channel 外再放持久队列、幂等状态和执行器。
@@ -27,8 +27,8 @@ Channels 不是任务队列，也不是托管在云端的常驻 Agent。它是�
   -> 模型判断、工具调用、可选回复工具
 ```
 
-<!-- wos:illustration claude-code-engineering/40-channels-external-events/02-infographic-concept-map.png -->
-![Notion 图解：一条事件到底经过什么](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/02-infographic-concept-map.png)
+<!-- wos:illustration claude-code-engineering/40-channels-external-events/02-infographic-concept-map.webp -->
+![Notion 图解：一条事件到底经过什么](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/02-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 Channel 服务器由 Claude Code 在同一台机器上通过 stdio 启动。它在 MCP 初始化结果中声明实验能力：
@@ -51,8 +51,8 @@ Channel 服务器由 Claude Code 在同一台机器上通过 stdio 启动。它�
 
 先确认当前 CLI 是否暴露预览参数：
 
-<!-- wos:illustration claude-code-engineering/40-channels-external-events/03-flowchart-operating-flow.png -->
-![Notion 图解：最短可验证路径](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/03-flowchart-operating-flow.png)
+<!-- wos:illustration claude-code-engineering/40-channels-external-events/03-flowchart-operating-flow.webp -->
+![Notion 图解：最短可验证路径](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/03-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 ```sh
@@ -116,8 +116,8 @@ curl -X POST http://localhost:8788 \
 
 Channel 通知没有协议级确认。官方参考明确说明，服务端等待 `mcp.notification()` 完成，只能证明数据写入传输层，不能证明 Claude Code 接收、模型处理或任务完成。会话没有以 Channel 模式启动、访问策略拒绝发送者、进程已退出时，事件都可能无法进入有效执行链。
 
-<!-- wos:illustration claude-code-engineering/40-channels-external-events/04-framework-system-framework.png -->
-![Notion 图解：通知协议没有完成回执](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/04-framework-system-framework.png)
+<!-- wos:illustration claude-code-engineering/40-channels-external-events/04-framework-system-framework.webp -->
+![Notion 图解：通知协议没有完成回执](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/04-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 生产桥接应自己保存事件状态：
@@ -134,8 +134,8 @@ Channel 通知没有协议级确认。官方参考明确说明，服务端等待
 
 外部消息是非可信输入，不应因为它来自团队聊天就自动获得命令权限。桥接层应分别控制身份入口、内容入口和工具出口：
 
-<!-- wos:illustration claude-code-engineering/40-channels-external-events/05-infographic-verification-guardrails.png -->
-![Notion 图解：信任边界](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/05-infographic-verification-guardrails.png)
+<!-- wos:illustration claude-code-engineering/40-channels-external-events/05-infographic-verification-guardrails.webp -->
+![Notion 图解：信任边界](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/05-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 - 身份入口：使用配对或发送者 allowlist，拒绝未知账号。
@@ -153,8 +153,8 @@ Channels 还提供实验性的权限转发能力，但远程批准会扩大风�
 - Anthropic 身份验证可用，Bedrock、Google Cloud Agent Platform 和 Microsoft Foundry 当前不支持 Channels。
 - Team 与 Enterprise 组织需要管理员显式启用。
 
-<!-- wos:illustration claude-code-engineering/40-channels-external-events/06-comparison-boundary-comparison.png -->
-![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/06-comparison-boundary-comparison.png)
+<!-- wos:illustration claude-code-engineering/40-channels-external-events/06-comparison-boundary-comparison.webp -->
+![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/40-channels-external-events/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 结论很窄：Channels 解决“把事件送进当前会话”，不负责可靠排队、长期托管和完成判定。把这三个职责拆开，架构才不会被聊天桥接的便利性误导。

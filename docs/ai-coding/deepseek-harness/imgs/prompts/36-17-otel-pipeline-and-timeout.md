@@ -1,6 +1,6 @@
 ---
 id: 36-17
-output: ../36-17-otel-pipeline-and-timeout.png
+output: ../36-17-otel-pipeline-and-timeout.webp
 aspect: 16:9
 style: notion
 watermark: false

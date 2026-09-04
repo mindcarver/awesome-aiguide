@@ -3,7 +3,7 @@
 > DeepSeek Harness（`dsh`）不是又一个 AI 编程客户端，而是一个把"模型之外的一切"都做成可替换插件的开源 agent harness。
 > 这一篇不讲 harness 学科通论（那在 [harness-engineering 系列](../harness-engineering/01-what-is-harness-engineering.md)），只回答：`dsh` 这个具体项目是什么、它为什么长这样
 
-![模型、插件化 Harness 与 Agent 的关系](imgs/01-framework-model-harness-agent.png)
+![模型、插件化 Harness 与 Agent 的关系](imgs/01-framework-model-harness-agent.webp)
 
 ## 先把坐标定准
 
@@ -42,7 +42,7 @@
 
 DeepSeek 选后者，是一个生态判断：**与其做一个锁死自家模型的封闭产品，不如做一个谁都能往里塞 provider 的开放 harness，让生态替它补全能力。** 这也是为什么 `dsh` 的 README 第一句强调的不是"DeepSeek 模型的客户端"，而是"open-source agent harness"。模型是 DeepSeek 的，harness 是大家的。
 
-![封闭 harness 与全插件化 harness 的取舍](imgs/02-comparison-closed-open-harness.png)
+![封闭 harness 与全插件化 harness 的取舍](imgs/02-comparison-closed-open-harness.webp)
 
 这套"一切皆插件"能成立，靠的是一个底层框架——Cordis。
 
@@ -64,7 +64,7 @@ DeepSeek 选后者，是一个生态判断：**与其做一个锁死自家模型
 
 第 4 条是灵魂。它解释了为什么 `dsh` 敢说"换一个 provider 等于换了整个产品"——因为 provider 是一个可干净撤销的注册，不是焊死在代码里的 import。Cordis 的细节（特别是 waterfall 这种"around 中间件"语义）是理解整个项目的钥匙，我们用 03 一篇专门讲它。这里你只需要记住：**Cordis 让"一切皆插件"从口号变成了一个有运行时保证的工程事实。**
 
-![Cordis 让一切皆插件的五个机制](imgs/03-framework-cordis-principles.png)
+![Cordis 让一切皆插件的五个机制](imgs/03-framework-cordis-principles.webp)
 
 ## 一个跑起来的 dsh 长什么样
 
@@ -77,7 +77,7 @@ DeepSeek 选后者，是一个生态判断：**与其做一个锁死自家模型
 
 关键是：**这些层之间是用 patch 叠加的，每一层都能改写或替换下面那层注册的任何一行配置。** 想看你的机器实际启动了什么，跑一句 `dsh --profile web --dump-config`，它打印出来的每一行配置，都能被你自己的 patch 替换掉。这就是"没有特权核心"的实际含义——你不用 fork 源码，挂一个插件就能改行为。这部分在 03（概念）和 06（源码导读）篇展开。
 
-![dsh 如何由 profile 和 bundle 装配](imgs/04-flowchart-profile-bundle.png)
+![dsh 如何由 profile 和 bundle 装配](imgs/04-flowchart-profile-bundle.webp)
 
 ## 一次对话在内部怎么跑
 
@@ -103,7 +103,7 @@ turn 开始
 turn 结束
 ```
 
-![dsh 一次对话的 turn 与 step 流程](imgs/05-flowchart-agent-loop.png)
+![dsh 一次对话的 turn 与 step 流程](imgs/05-flowchart-agent-loop.webp)
 
 注意几个反常识的点（后面专篇讲）：
 
@@ -129,7 +129,7 @@ turn 结束
 
 这就是 `dsh` 设计哲学的内核：**不写死任何一个能力，而是为每个能力设计一个可替换的接缝。** 代价是抽象层多、调试链长（48 篇会讲这个代价）；回报是从"一个产品"变成"一族可组合的产品"。
 
-![能力接缝如何把 provider 替换扩展到整个执行世界](imgs/06-framework-capability-seams.png)
+![能力接缝如何把 provider 替换扩展到整个执行世界](imgs/06-framework-capability-seams.webp)
 
 ## 仓库地图：42 篇要拆的东西
 

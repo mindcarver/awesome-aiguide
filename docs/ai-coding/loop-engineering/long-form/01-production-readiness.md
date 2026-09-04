@@ -1,6 +1,6 @@
 # 能停的 Loop 才敢上生产：从单次会话到可托付的代理控制系统
 
-![Loop engineering 生产就绪封面](../../../../assets/loop-engineering-production-readiness-cover.png)
+![Loop engineering 生产就绪封面](../../../../assets/loop-engineering-production-readiness-cover.webp)
 
 > 这是一篇写给「已经在用 Claude Code、Codex 或 Cursor，但想把 loop 真正跑上生产」的中高级工程师的判断框架。
 > 它不复述本系列前五篇正文，而是在它们之上叠加一组 Phase 0 硬证据，给你一条从概念到能上生产的完整判断链。
@@ -17,7 +17,7 @@
 
 下面把每一条拆开讲，给具体数字、具体代码、具体反例。
 
-![生产 Loop 控制系统总览](imgs/production-readiness/01-framework-control-system.png)
+![生产 Loop 控制系统总览](imgs/production-readiness/01-framework-control-system.webp)
 
 ## 一、问题起点：单次会话为什么不够用了
 
@@ -85,7 +85,7 @@ harness engineering 研究的是模型外面那层工程骨架：工具调用、
 
 缺其中任何一项，通常都还不叫 loop，只能算「长一点的 prompt」。
 
-![Loop 控制系统的六个一等动词](imgs/production-readiness/02-framework-six-verbs.png)
+![Loop 控制系统的六个一等动词](imgs/production-readiness/02-framework-six-verbs.webp)
 
 ## 三、五积木 + 状态脊柱
 
@@ -147,7 +147,7 @@ npx @cobusgreyling/loop-init . --pattern daily-triage --tool claude-code
 
 breim/loop-harness 仓库对 STATE.md 的角色有一句关键澄清：「STATE.md（比如声称测试通过）会被真实命令（npm test）核验」。这句话是理解整个 loop 可信度的钥匙：STATE.md 里写的「测试通过」只是 agent 的一个 claim，真正的证明要靠运行 `npm test` 这种确定性命令。这条线索直接通向下一节的核心论证。
 
-![Loop 的三层状态脊柱](imgs/production-readiness/03-framework-state-spine.png)
+![Loop 的三层状态脊柱](imgs/production-readiness/03-framework-state-spine.webp)
 
 ## 四、maker/checker：「完成」是断言，不是证明
 
@@ -232,7 +232,7 @@ verifier 「读了一遍判断」仍然是 opinion。它没有跑测试，只是
 
 注意配置 C 多花了 token（跑了 install 和 test），这就是 Addy 说的「It costs real tokens and earns them selectively」。第二意见要花真钱，所以只该花在「错了代价大」的地方。修一个注释不值得跑完整 verifier 链；修一个合并进 main 的 PR 值得。这个判断必须基于「错了的代价」，不能基于「我觉得更稳」。
 
-![从 maker 自评到确定性证明的三种可信度](imgs/production-readiness/04-comparison-claim-proof.png)
+![从 maker 自评到确定性证明的三种可信度](imgs/production-readiness/04-comparison-claim-proof.webp)
 
 ### 4.5 闭环 loop 自带验证 gate，开环靠人确认
 
@@ -267,7 +267,7 @@ loop engineering 最值得直接照抄的部分是 L0-L3 上线分级。
 | PR Babysitter | 第三条 | L2 | 离代码改动和协作沟通近 |
 | CI Sweeper | 第三条 | L2 | 高频、长日志、假阳性多，最容易烧钱 |
 
-![L0 到 L3 的渐进上线阶梯](imgs/production-readiness/05-framework-l1-first.png)
+![L0 到 L3 的渐进上线阶梯](imgs/production-readiness/05-framework-l1-first.webp)
 
 选 pattern 的四个判断问题：这个任务是否反复出现？它的输入是否足够结构化？出错后能否低成本回滚？能否先只报告而不自动执行？四个问题里两个答不上来，先别做 loop。
 
@@ -379,7 +379,7 @@ harness:
 
 三层缺一不可。只有 guardrails 没有 stop conditions，agent 可能在合规范围内无限重试烧钱；只有 stop conditions 没有 gates，agent 可能在预算内完成了一个破坏性不可逆动作；只有 gates 没有前两层，人会被 approval 疲劳淹没，最后机械地点「批准」。
 
-![治理 runaway iteration 的三层防线](imgs/production-readiness/06-infographic-runaway-defense.png)
+![治理 runaway iteration 的三层防线](imgs/production-readiness/06-infographic-runaway-defense.webp)
 
 ### 6.5 三种债：loop 越有效，欠的债越深
 
@@ -470,7 +470,7 @@ Cursor 最适合把 loop 和编辑器工作流粘在一起。它不需要完全�
 
 一句话总结：**迁移 loop 时，迁能力协议，不要迁产品皮肤。** 能力协议包括 triage 规则、state schema、maker/checker 分工、节奏、风险边界。只要这些保住，底层工具换了，loop 仍然是同一条 loop。
 
-![跨工具迁移时应保留的能力协议顺序](imgs/production-readiness/07-framework-migration-protocol.png)
+![跨工具迁移时应保留的能力协议顺序](imgs/production-readiness/07-framework-migration-protocol.webp)
 
 ### 7.3 工具无关的最小模板
 
@@ -662,7 +662,7 @@ trigger: { schedule: "0 6 * * 1-5" }  # 心跳，不需要任何人的终端开�
 
 任何一格答不上来，就是你的 readiness gap。gap 越多，越不该升级。
 
-![生产 readiness 升级前的五道自检门](imgs/production-readiness/08-checklist-readiness-gates.png)
+![生产 readiness 升级前的五道自检门](imgs/production-readiness/08-checklist-readiness-gates.webp)
 
 ## 十、何时该停掉一条 loop
 

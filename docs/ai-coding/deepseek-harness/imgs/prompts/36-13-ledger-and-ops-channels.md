@@ -1,6 +1,6 @@
 ---
 id: 36-13
-output: ../36-13-ledger-and-ops-channels.png
+output: ../36-13-ledger-and-ops-channels.webp
 aspect: 16:9
 style: notion
 watermark: false

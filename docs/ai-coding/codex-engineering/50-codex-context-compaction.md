@@ -1,7 +1,7 @@
 # Codex 上下文压缩：什么时候压、怎么压、怎么在压缩前交接
 
-<!-- codex:cover ../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/00-cover-context-compaction.png -->
-![Codex 上下文压缩封面：触发、四条路径与压缩前交接](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/00-cover-context-compaction.png)
+<!-- codex:cover ../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/00-cover-context-compaction.webp -->
+![Codex 上下文压缩封面：触发、四条路径与压缩前交接](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/00-cover-context-compaction.webp)
 <!-- /codex:cover -->
 
 
@@ -9,8 +9,8 @@
 
 Codex 的上下文窗口有硬上限，压缩按 token 用量触发，不是按时间。压缩有四条代码路径，走 OpenAI 官方 API 的 Codex 模型默认走服务端 `/responses/compact`，返回一个客户端不解密的黑盒存档。运行时靠每个回合前后数 token 判断该不该压。外部用 `/status`、`/statusline` 或 SDK 的 ContextCompaction 事件观测。想在压缩前交接任务，最稳的办法不是拦截压缩，是把状态写进文件。
 
-<!-- wos:illustration codex-engineering/50-codex-context-compaction/01-framework-context-window.png -->
-![Notion 图解：上下文窗口不是按时间，而是按 token 水位触发压缩](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/01-framework-context-window.png)
+<!-- wos:illustration codex-engineering/50-codex-context-compaction/01-framework-context-window.webp -->
+![Notion 图解：上下文窗口不是按时间，而是按 token 水位触发压缩](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/01-framework-context-window.webp)
 <!-- /wos:illustration -->
 
 
@@ -40,8 +40,8 @@ Codex 没有真正的记忆。每生成一步，它都要把之前发生的所�
 
 这是第一个被多数博客讲模糊的问题。答案是按 token 用量判断，每个回合前后各检查一次，没有任何计时器。
 
-<!-- wos:illustration codex-engineering/50-codex-context-compaction/02-flowchart-trigger-timing.png -->
-![Notion 图解：PreTurn、MidTurn 和模型切换三处压缩触发点](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/02-flowchart-trigger-timing.png)
+<!-- wos:illustration codex-engineering/50-codex-context-compaction/02-flowchart-trigger-timing.webp -->
+![Notion 图解：PreTurn、MidTurn 和模型切换三处压缩触发点](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/02-flowchart-trigger-timing.webp)
 <!-- /wos:illustration -->
 
 
@@ -65,8 +65,8 @@ Codex 没有真正的记忆。每生成一步，它都要把之前发生的所�
 
 这是整篇最关键、也最容易被讲错的地方。Codex 的压缩不是一个机制，是四条代码路径，由 `run_auto_compact` 按 feature flag 优先级分发：
 
-<!-- wos:illustration codex-engineering/50-codex-context-compaction/03-comparison-four-paths.png -->
-![Notion 图解：Codex 压缩的四条路径](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/03-comparison-four-paths.png)
+<!-- wos:illustration codex-engineering/50-codex-context-compaction/03-comparison-four-paths.webp -->
+![Notion 图解：Codex 压缩的四条路径](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/03-comparison-four-paths.webp)
 <!-- /wos:illustration -->
 
 
@@ -93,8 +93,8 @@ Codex 没有真正的记忆。每生成一步，它都要把之前发生的所�
 
 两层观测。
 
-<!-- wos:illustration codex-engineering/50-codex-context-compaction/04-infographic-observability.png -->
-![Notion 图解：人类界面和程序事件两层观测](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/04-infographic-observability.png)
+<!-- wos:illustration codex-engineering/50-codex-context-compaction/04-infographic-observability.webp -->
+![Notion 图解：人类界面和程序事件两层观测](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/04-infographic-observability.webp)
 <!-- /wos:illustration -->
 
 
@@ -108,8 +108,8 @@ Codex 没有真正的记忆。每生成一步，它都要把之前发生的所�
 
 这是很多人最关心的问题。分三层回答。
 
-<!-- wos:illustration codex-engineering/50-codex-context-compaction/05-flowchart-handoff-boundary.png -->
-![Notion 图解：PreCompact hook 与文件系统交接边界](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/05-flowchart-handoff-boundary.png)
+<!-- wos:illustration codex-engineering/50-codex-context-compaction/05-flowchart-handoff-boundary.webp -->
+![Notion 图解：PreCompact hook 与文件系统交接边界](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/05-flowchart-handoff-boundary.webp)
 <!-- /wos:illustration -->
 
 
@@ -130,8 +130,8 @@ Codex 没有真正的记忆。每生成一步，它都要把之前发生的所�
 
 社区和 issue 里反复出现的几个问题，源码层面都能解释。
 
-<!-- wos:illustration codex-engineering/50-codex-context-compaction/06-infographic-pitfalls-guardrails.png -->
-![Notion 图解：上下文压缩的三类真实踩坑和护栏](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/06-infographic-pitfalls-guardrails.png)
+<!-- wos:illustration codex-engineering/50-codex-context-compaction/06-infographic-pitfalls-guardrails.webp -->
+![Notion 图解：上下文压缩的三类真实踩坑和护栏](../../../assets/ai-coding-engineering-illustrations/codex-engineering/50-codex-context-compaction/06-infographic-pitfalls-guardrails.webp)
 <!-- /wos:illustration -->
 
 

@@ -3,7 +3,7 @@
 > dsh 的 telemetry 子系统有一条硬边界叫"止于 emit()"：harness 负责捕获、投影、脱敏扩展点，到把记录交给后端的那次调用为止；批处理、重试、排队、丢包策略全归上报 SDK。交付因此是尽力而为的，接收方按 `(session.id, event.seq)` 去重。
 > 两条最值得记住的纪律：脱敏瀑布零内置规则，导出数据的干净程度等于部署挂载的规则，没挂规则就原样出进程；授权是正向且 fail-closed 的，三种模式里只有 FULL 允许直接 emit，未知模式在读传输配置之前就失败。2026-08 起默认值是 DISABLED，共享基础组合挂载了后端但不上报，环境变量是唯一的正门。
 
-![会话日志与可观测性分工](imgs/36-01-log-vs-monitoring.png)
+![会话日志与可观测性分工](imgs/36-01-log-vs-monitoring.webp)
 
 ## 会话日志不是监控
 
@@ -15,7 +15,7 @@ telemetry 子系统因此存在。它不参与 agent loop，不碰任何模型�
 
 把使用它的人具象一点。值班工程师半夜被叫起来，一个生产 agent 卡了四十分钟没出结果。他要看的东西很朴素：这个会话的最后一个事件是什么时候到的，最后一轮 turn 是怎么结束的，有没有 agent-error 在堆，token 消耗是不是突然抬了（可能是压缩失效在空转）。这些问题没有一条需要会话日志的重建能力，全部是对事件流的过滤和聚合，正是监控后端吃了几十年的那类查询。telemetry 的存在，就是让这类问题不必等到天亮去翻进程里的日志文件。
 
-![事件从捕获到 OTel 的生命周期](imgs/36-02-event-life-to-otel.png)
+![事件从捕获到 OTel 的生命周期](imgs/36-02-event-life-to-otel.webp)
 
 ## 一次事件的一生
 
@@ -27,7 +27,7 @@ telemetry 子系统因此存在。它不参与 agent loop，不碰任何模型�
 
 这条链路上每一站的失败都有归属：投影和脱敏的失败归 harness，被隔离被扣记录；传输的失败归 SDK，重试或丢弃按它的策略；查询侧的重复靠去重键吸收。没有一个失败需要跨站追责，这就是边界公理在单条事件上的兑现。
 
-![协调器与 sink 契约](imgs/36-03-coordinator-sink-contract.png)
+![协调器与 sink 契约](imgs/36-03-coordinator-sink-contract.webp)
 
 ## 接缝拆分：协调器与 sink 契约
 
@@ -39,7 +39,7 @@ telemetry 子系统因此存在。它不参与 agent loop，不碰任何模型�
 
 flush 值得多看一眼，因为它是个"接口里留了、参考实现却不用"的成员。它存在的理由是给纯自研后端一个 turn 边界的提示机会：某些后端想在用户视角的回合结束时尽快可见。它被大多数后端省略的理由更硬：flush 和 shutdown 的并发交错是出了名的静默丢失温床，OTel 后端数出三条路径之后干脆不实现，让批处理器的调度独占刷新权。一个可选成员，配上一个"建议你别实现"的参考姿态，这比砍掉成员更诚实：需求是真实存在的，只是成熟方案里没有它的位置。
 
-![harness 止于 emit 的边界](imgs/36-04-stop-at-emit.png)
+![harness 止于 emit 的边界](imgs/36-04-stop-at-emit.webp)
 
 ## 止于 emit()：一条边界公理
 
@@ -51,7 +51,7 @@ harness 的职责到调用 `emit(record)` 结束。批处理、重试、排队�
 
 `emit()` 抛异常会被协调器隔离并记日志，异常永远到不了 loop。这条 plus 非阻塞要求，合起来保证监控永远不会拖慢被监控的对象。一个反例值得记住：OTel 后端刻意不实现 `flush()`。早期版本把 flush 转发给 provider 的 `forceFlush()`，后来数出了三条静默丢失路径，删掉了。现在的立场是批处理器是唯一的刷新者，它自带的 `scheduledDelayMillis` 已经可调，turn 边界延迟真成为问题时也只会经由处理器自己的 forceFlush 回来，不再碰 provider 那个带超时包装的版本。
 
-![捕获点与热重载收养扫描](imgs/36-05-capture-and-adoption-scan.png)
+![捕获点与热重载收养扫描](imgs/36-05-capture-and-adoption-scan.webp)
 
 ## 捕获点与热重载的收养扫描
 
@@ -61,9 +61,9 @@ live 模式下协调器在 `session/event` 上做捕获：投影、深拷贝、�
 
 这圈注册里最值得看的是收养扫描。没有它，热重载一次，重载窗口内创建的会话就成了监控盲区，而且没人会发现，因为一切看起来都在正常工作。盲区比错误难对付的地方在于它不报错。
 
-![三种 telemetry 模式](imgs/36-06-three-telemetry-modes.png)
+![三种 telemetry 模式](imgs/36-06-three-telemetry-modes.webp)
 
-![反馈授权的对象身份闸门](imgs/36-07-feedback-only-authorization.png)
+![反馈授权的对象身份闸门](imgs/36-07-feedback-only-authorization.webp)
 
 ## 三种模式：授权是正向且 fail-closed
 
@@ -93,7 +93,7 @@ plugins:
 
 值得看的是那行授权头的 JS 插值：token 从环境变量取，配置文件里从头到尾没有字面密钥。这和凭证子系统的纪律同源，secret 走引用，配置只存名字。`exporter.url` 在两种上传模式下必填、必须能解析为 http(s)、没有默认值；DISABLED 下可省略且不读。
 
-![默认关闭与环境变量闸门](imgs/36-08-default-off-env-gates.png)
+![默认关闭与环境变量闸门](imgs/36-08-default-off-env-gates.webp)
 
 ## 默认关闭与部署旋钮
 
@@ -105,9 +105,9 @@ plugins:
 
 顺带一段已消失的历史：曾经还有第二路出站遥测，dsh-sdk 启动器的活动上报，读同一个环境变量、在命令执行前冻结授权。2026-08-11 移除 SDK 项目工具链时，那套从未发布的开发者项目产品连同启动器遥测包一起删掉了，没有替代实现。所以截至 2026-08，出站遥测只剩会话 OTel 后端这一路，`DSH_TELEMETRY_MODE` 对它单独生效。
 
-![固定 chunk 投影](imgs/36-09-first-chunk-projection.png)
+![固定 chunk 投影](imgs/36-09-first-chunk-projection.webp)
 
-![seq 间隙不等于丢失](imgs/36-10-seq-gaps-are-normal.png)
+![seq 间隙不等于丢失](imgs/36-10-seq-gaps-are-normal.webp)
 
 ## 固定 chunk 投影与 seq 间隙
 
@@ -121,7 +121,7 @@ plugins:
 
 回放路径上的投影有个配套细节：回放时只有游标之后的事件会被重新移交，但游标之前及等于游标的事件仍然参与重建 chunk 投影状态。不重建的话，回放段里的"第一个 chunk"会判断错位，把第二个 chunk 当第一个发出去。投影是有状态的，回放必须先恢复状态再继续。
 
-![脱敏瀑布与 fail-closed](imgs/36-11-redaction-waterfall.png)
+![脱敏瀑布与 fail-closed](imgs/36-11-redaction-waterfall.webp)
 
 ## 脱敏瀑布：零内置规则，以及它背后的历史
 
@@ -133,7 +133,7 @@ plugins:
 
 这个立场是用一次真实的失败换来的。早期有一个实现分支，把会话事件原样导出，捕获侧的设计评审都过了，法务审查拒绝了整个方案。后来的复活版（2026-07-23 的 revival 决策）复用了那套被评审过的捕获设计，但把导出改成了现在的姿态：harness 提供能力，部署决定目的地和内容策略。同一个时期被否决的还有"接收端 collector 里洗数据"的方案，理由一句话说透：先把秘密发出去再洗，洗的是第二道手。
 
-![尽力而为与接收方去重](imgs/36-12-best-effort-watermark.png)
+![尽力而为与接收方去重](imgs/36-12-best-effort-watermark.webp)
 
 ## 尽力而为与游标
 
@@ -143,9 +143,9 @@ plugins:
 
 游标本身是对"注册是可逆副作用"原则的一个刻意窄例外：条目随会话消亡，值是单调水位，丢了从来不是错误。用 `WeakMap` 而不是一张全局表，也是为了让"随会话消亡"这句话由数据结构本身兑现：会话对象被回收，游标条目跟着消失，不存在一张越积越大的注册表要人打扫。游标缺失时降级为从 `Session.firstLiveSeq` 重新移交，这个降级是有教训的：第一版是全日志回放，后果是每次 resume 都为完整历史重新计费一次，查询侧计数翻倍，接收端没有摄入去重，账直接算错。另一个静默的体贴：resume 在本地日志里合成的崩溃修复关 turn 事件，导出时会吞掉，导出一条合成 closer 只能把一个不完整的 turn 粉饰成完整。
 
-![ledger 与 ops 两个通道](imgs/36-13-ledger-and-ops-channels.png)
+![ledger 与 ops 两个通道](imgs/36-13-ledger-and-ops-channels.webp)
 
-![不同模式下的崩溃判断](imgs/36-14-crash-detection-by-mode.png)
+![不同模式下的崩溃判断](imgs/36-14-crash-detection-by-mode.webp)
 
 ## 两个通道与崩溃检测
 
@@ -163,7 +163,7 @@ ops 通道还撑起崩溃检测。FULL 模式下，会话的记录流里没有 `
 
 跨谱系的流还要拼一次：恢复的会话在自己 id 的流上从上一个进程停的地方继续；fork 出的会话的流从继承边界开始，前缀在父会话的流里，接收端靠 `session.parent_id` 加 `session.seed_length` 拼接。
 
-![外发数据边界](imgs/36-15-what-leaves-machine.png)
+![外发数据边界](imgs/36-15-what-leaves-machine.webp)
 
 ## 什么会离开你的机器
 
@@ -173,7 +173,7 @@ API key 不在其中，而且是在结构上不在：适配器的 API key 是构
 
 但文件内容里嵌的密码、命令输出里带的 token，会在记录里，除非部署挂了脱敏规则。dsh 不替你做这个决定，这是写明在案的风险不是已解决的问题：越过信任边界的导出、又没挂规则的部署，会把凭证原样送出去。
 
-![共享披露说明的是策略](imgs/36-16-sharing-disclosure.png)
+![共享披露说明的是策略](imgs/36-16-sharing-disclosure.webp)
 
 ## 共享披露
 
@@ -181,9 +181,9 @@ mounted backend 有一个必选的 `sharing` 成员，向人类可见的确认�
 
 披露声明的是策略，从不承诺交付：移交是非阻塞入队，批处理、重试、丢包归后端 SDK，也不承诺留存。这让 `/feedback` 的确认文本能诚实地说"你的会话数据将以 full 模式共享"或"不会共享任何数据"，而不是一句含糊的"可能共享"。词表归接缝所有，后端不必依赖 OTel 包就能表态。这也解释了为什么默认关闭之后基础组合仍然挂载后端配置行：禁用模式下记录反馈时要能说出"什么都不会共享"，这条披露需要挂载着的服务来背书。
 
-![OTel 管道与关机时限](imgs/36-17-otel-pipeline-and-timeout.png)
+![OTel 管道与关机时限](imgs/36-17-otel-pipeline-and-timeout.webp)
 
-![匿名资源身份](imgs/36-18-anonymous-resource-identity.png)
+![匿名资源身份](imgs/36-18-anonymous-resource-identity.webp)
 
 ## OTel 管道的工程细节
 
@@ -195,7 +195,7 @@ Resource identity 带 `service.name` 和 `service.version`，加上这个包生�
 
 上游 `@opentelemetry/sdk-logs` 还在实验树发布，SDK 的 API 变动会砸到 provider 这一层，但接缝契约不动。选这个组合而不是自写传输，买的是重试、批处理、协议实现这三样成熟件，付的是跟着实验树走的不稳定，账面上划算，因为不稳定被边界圈在了 provider 一层。
 
-![被否决的方案](imgs/36-19-rejected-designs.png)
+![被否决的方案](imgs/36-19-rejected-designs.webp)
 
 ## 被否决的方案
 
@@ -221,7 +221,7 @@ flush 转发给 provider 的 forceFlush 被删，三条静默丢失路径。批�
 
 设计笔记里还留着三个开放问题，都和推迟的决定有关。outbox 什么时候回来：要等第一个真实部署说出"崩溃丢失不可接受"，需求出现之前它是纯增量层，不会为了完整性预付。turn 边界延迟：现在的批处理器调度对大多数场景够用，真有人需要更低的导出延迟，回来的路径也是处理器的 forceFlush，不是 provider 的包装版。span 映射：被否了但门没锁死，等一个真的要按 span 查询的消费者出现再议。三个问题的共同姿态是，需求没来就不动手，动手时路径已经想清楚。
 
-![Telemetry 边界公理总结](imgs/36-20-telemetry-boundary-summary.png)
+![Telemetry 边界公理总结](imgs/36-20-telemetry-boundary-summary.webp)
 
 ## 结论
 

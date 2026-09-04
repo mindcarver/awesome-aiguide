@@ -42,9 +42,9 @@ grep -nE "(在 Claude Code|Claude Code skill|Claude Code 用户|Cursor only|Code
 
 ### 实战截图（日志快照）
 
-![darwin baseline](../../assets/darwin-skill-eval-baseline.png)
-![darwin after round2](../../assets/darwin-skill-eval-after.png)
-![protocol flow](../../assets/skill-eval-protocol-flow.png)
+![darwin baseline](../../assets/darwin-skill-eval-baseline.webp)
+![darwin after round2](../../assets/darwin-skill-eval-after.webp)
+![protocol flow](../../assets/skill-eval-protocol-flow.webp)
 
 ## 复用协议（你后续每个 skill 都按这个跑）
 

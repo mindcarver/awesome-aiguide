@@ -16,8 +16,8 @@ Goal 模式把一个可持久化目标绑定到线程，让 Codex 围绕完成�
 
 普通 prompt 像一张任务便签，模型回答完就结束。Goal 更像挂在工位上的验收卡：目标仍未完成时，Codex 可以继续选择动作；遇到阻塞时，卡片保留，执行状态改变。
 
-<!-- wos:illustration codex-engineering/41-goal-mode-long-running/01-infographic-concept-map.png -->
-![Notion 图解：Goal 保存的是什么](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/01-infographic-concept-map.png)
+<!-- wos:illustration codex-engineering/41-goal-mode-long-running/01-infographic-concept-map.webp -->
+![Notion 图解：Goal 保存的是什么](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/01-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 App Server 的数据模型显示，一个线程只有一个持久 Goal。核心字段包括 objective、status、可选 token budget、已用 token 和已用时间。`thread/goal/set` 创建或更新目标，`thread/goal/get` 读取，`thread/goal/clear` 删除。目标状态可以表达 active、complete、blocked、budgetLimited 和 usageLimited 等停止原因。
@@ -52,8 +52,8 @@ App Server 的数据模型显示，一个线程只有一个持久 Goal。核心�
 
 桌面应用的 Goal progress row 提供 pause、resume、edit 和 clear。CLI 与 IDE 中可以在原会话继续发送消息，补充上下文或调整约束。
 
-<!-- wos:illustration codex-engineering/41-goal-mode-long-running/02-framework-system-framework.png -->
-![Notion 图解：运行中的控制面](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/02-framework-system-framework.png)
+<!-- wos:illustration codex-engineering/41-goal-mode-long-running/02-framework-system-framework.webp -->
+![Notion 图解：运行中的控制面](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/02-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 准备断网或合盖时先暂停，避免执行结果与连接状态错位。任务即将进入高风险动作时也该暂停，先审查 diff、迁移计划或权限请求。发现完成条件写错后，暂停并编辑，不要靠连续多条补丁式 prompt 叠加互相冲突的规则。
@@ -74,8 +74,8 @@ Side chat 适合问进度或解释，不打断主 Goal。不要在 side chat 悄
 
 Goal 会持久化，不代表 shell 进程、浏览器页面、数据库事务和远程连接都被快照。恢复后的第一步是重建可验证状态。
 
-<!-- wos:illustration codex-engineering/41-goal-mode-long-running/03-flowchart-operating-flow.png -->
-![Notion 图解：暂停与恢复不是进程快照](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/03-flowchart-operating-flow.png)
+<!-- wos:illustration codex-engineering/41-goal-mode-long-running/03-flowchart-operating-flow.webp -->
+![Notion 图解：暂停与恢复不是进程快照](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/03-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 例如测试命令暂停时仍在后台运行，恢复后不能根据旧进度条猜结果。先检查进程或重新运行可重复的测试。浏览器登录可能过期，SSH host 可能重启，本地依赖也可能被其他任务修改。这些都属于运行环境，不属于 Goal 文本。
@@ -86,8 +86,8 @@ Goal 会持久化，不代表 shell 进程、浏览器页面、数据库事务�
 
 官方文档明确说明，创建 Goal 不会扩大访问范围。它继续使用原线程的 sandbox 和 approval policy，并在需要决定时暂停。
 
-<!-- wos:illustration codex-engineering/41-goal-mode-long-running/04-infographic-verification-guardrails.png -->
-![Notion 图解：权限不会随持续时间增长](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/04-infographic-verification-guardrails.png)
+<!-- wos:illustration codex-engineering/41-goal-mode-long-running/04-infographic-verification-guardrails.webp -->
+![Notion 图解：权限不会随持续时间增长](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/04-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 这个边界很重要。持续数小时的任务会遇到更多命令、网站和凭据请求，风险面比一次短 prompt 大。不要为了减少夜间等待，把整个 Goal 改成 Full access。更稳的做法是让低风险步骤自动推进，高风险动作形成明确审批点。
@@ -108,8 +108,8 @@ Goal 会持久化，不代表 shell 进程、浏览器页面、数据库事务�
 
 启动时记录目标文本、仓库路径、分支和验证命令。每完成一个可独立验证的阶段，要求 Codex 更新任务文件或现有 issue，不另造隐蔽状态。
 
-<!-- wos:illustration codex-engineering/41-goal-mode-long-running/05-timeline-lifecycle-timeline.png -->
-![Notion 图解：一个可恢复的长期任务协议](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/05-timeline-lifecycle-timeline.png)
+<!-- wos:illustration codex-engineering/41-goal-mode-long-running/05-timeline-lifecycle-timeline.webp -->
+![Notion 图解：一个可恢复的长期任务协议](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/05-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 暂停前让 Codex 停止启动新工作，等待当前可安全结束的命令返回，并输出恢复点。恢复点至少写明已完成、未完成、当前 diff、最后验证、待决策和首个恢复动作。
@@ -122,8 +122,8 @@ Goal 会持久化，不代表 shell 进程、浏览器页面、数据库事务�
 
 Goal 减少开发者反复催促「继续」的次数，也让模型拥有更长的自主行动链。目标写得越宽，偏离范围的机会越多。解决办法是缩小产物、列出禁区并绑定验证，继续增加形容词没有帮助。
 
-<!-- wos:illustration codex-engineering/41-goal-mode-long-running/06-comparison-boundary-comparison.png -->
-![Notion 图解：权衡与限制](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/06-comparison-boundary-comparison.png)
+<!-- wos:illustration codex-engineering/41-goal-mode-long-running/06-comparison-boundary-comparison.webp -->
+![Notion 图解：权衡与限制](../../../assets/ai-coding-engineering-illustrations/codex-engineering/41-goal-mode-long-running/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 暂停保留目标，但不能保证外部环境原样存在。恢复协议会增加几分钟检查成本，却能避免在错误分支、过期凭据或未完成进程上继续。

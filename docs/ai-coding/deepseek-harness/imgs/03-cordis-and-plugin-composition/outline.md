@@ -15,7 +15,7 @@ image_count: 10
 **Visual Content**: Split comparison between register-only frameworks and a reversible plugin lifecycle.
 **Text Plan**: Title: “能注册，却不能注销”. Labels: “注册”, “卸载”, “副作用”, “重启治百病”, “卸载即还原”. Takeaway: “加载与卸载必须对等”.
 **Type Application**: Comparison.
-**Filename**: 01-comparison-register-unregister.png
+**Filename**: 01-comparison-register-unregister.webp
 
 ## Illustration 2
 
@@ -24,7 +24,7 @@ image_count: 10
 **Visual Content**: A two-axis framework contrasting lifecycle reversal with reactive dependency wiring, joined by a runtime Cordis node.
 **Text Plan**: Title: “时空可组合性”. Labels: “effect”, “coeffect”, “Temporal Composability”, “Spatial Composability”, “Revertible Effects”, “Reactive Coeffects”. Takeaway: “把可逆性与依赖反应式变成运行时一等机制”.
 **Type Application**: Framework.
-**Filename**: 02-framework-spatiotemporal-composability.png
+**Filename**: 02-framework-spatiotemporal-composability.webp
 **Generation Prompt**: `prompts/02b-framework-spatiotemporal-composability.md`
 
 ## Illustration 3
@@ -34,7 +34,7 @@ image_count: 10
 **Visual Content**: A clean lineage from Koishi through Cordis to DeepSeek Harness, with shared theory below and distinct product surfaces above.
 **Text Plan**: Title: “Cordis 从哪里来”. Labels: “Koishi”, “Cordis”, “DeepSeek Harness”, “元框架”, “可审计、可打补丁”. Takeaway: “同一套底层理论，不同产品形态”.
 **Type Application**: Framework / lineage.
-**Filename**: 03-framework-cordis-lineage.png
+**Filename**: 03-framework-cordis-lineage.webp
 **Generation Prompt**: `prompts/03b-framework-cordis-lineage.md`
 
 ## Illustration 4
@@ -44,7 +44,7 @@ image_count: 10
 **Visual Content**: Five modular cards around a central Cordis runtime, with the fifth reversible-effects card as the foundation.
 **Text Plan**: Title: “五条范式，第五条是灵魂”. Labels: “Service”, “context”, “inject”, “类型化事件”, “可逆副作用”. Takeaway: “前四条定义形状，第五条提供地基”.
 **Type Application**: Framework.
-**Filename**: 04-framework-five-paradigms.png
+**Filename**: 04-framework-five-paradigms.webp
 
 ## Illustration 5
 
@@ -53,7 +53,7 @@ image_count: 10
 **Visual Content**: Three equal cards—function, object, and class/Service—converging on the same apply(ctx) lifecycle.
 **Text Plan**: Title: “插件的三种合法形态”. Labels: “函数插件”, “对象插件”, “类插件”, “Service”, “apply(ctx)”. Takeaway: “一个服务就是一个插件”.
 **Type Application**: Comparison.
-**Filename**: 05-comparison-plugin-service-shapes.png
+**Filename**: 05-comparison-plugin-service-shapes.webp
 
 ## Illustration 6
 
@@ -62,7 +62,7 @@ image_count: 10
 **Visual Content**: Providers register services into a shared context repository; consumers retrieve ctx.tools, ctx.llm, ctx.agents, or greeter by key.
 **Text Plan**: Title: “context 是一个服务仓库”. Labels: “ctx.tools”, “ctx.llm”, “ctx.agents”, “greeter”, “Service Locator”. Takeaway: “按 key 查能力，不 import 实现”.
 **Type Application**: Framework.
-**Filename**: 06-framework-context-service-repository.png
+**Filename**: 06-framework-context-service-repository.webp
 
 ## Illustration 7
 
@@ -71,7 +71,7 @@ image_count: 10
 **Visual Content**: A provider and consumer move through PENDING and ACTIVE; removing and restoring the provider causes automatic unload and reactivation.
 **Text Plan**: Title: “inject 让加载顺序消失”. Labels: “inject”, “PENDING”, “ACTIVE”, “provider”, “Reactive Coeffects”. Takeaway: “依赖变化时，消费者自动重连”.
 **Type Application**: Flowchart / state framework.
-**Filename**: 07-flowchart-inject-reactive-dependencies.png
+**Filename**: 07-flowchart-inject-reactive-dependencies.webp
 
 ## Illustration 8
 
@@ -80,7 +80,7 @@ image_count: 10
 **Visual Content**: A typed event center broadcasts to listeners, with four branches for emit, parallel, serial, and waterfall; waterfall includes a next() gate and a veto short-circuit.
 **Text Plan**: Title: “类型化事件：插件不直接互调”. Labels: “emit”, “on”, “parallel”, “serial”, “waterfall”, “veto”. Takeaway: “只观察要调用 next()”.
 **Type Application**: Framework / process.
-**Filename**: 08-framework-typed-event-dispatch.png
+**Filename**: 08-framework-typed-event-dispatch.webp
 
 ## Illustration 9
 
@@ -89,7 +89,7 @@ image_count: 10
 **Visual Content**: A lifecycle loop from ACTIVE to UNLOADING to DISPOSED, with ctx.on, ctx.plugin, and ctx.effect registrations unwinding in reverse order.
 **Text Plan**: Title: “注册即可逆副作用”. Labels: “ctx.on”, “ctx.plugin”, “ctx.effect”, “ACTIVE”, “UNLOADING”, “DISPOSED”. Takeaway: “卸载按相反顺序撤销”.
 **Type Application**: Flowchart / lifecycle.
-**Filename**: 09-flowchart-reversible-effects-lifecycle.png
+**Filename**: 09-flowchart-reversible-effects-lifecycle.webp
 
 ## Illustration 10
 
@@ -98,4 +98,4 @@ image_count: 10
 **Visual Content**: A vertical stack from empty list through dsh-base, bundle layers, profile patch, home patch, and --patch overlay, branching into web and headless surfaces.
 **Text Plan**: Title: “profile + bundle：从空列表到插件树”. Labels: “空列表”, “dsh-base”, “profile patch”, “home patch”, “--patch”, “web / headless”. Takeaway: “越上层优先级越高”.
 **Type Application**: Flowchart / layered framework.
-**Filename**: 10-flowchart-profile-bundle-patch-stack.png
+**Filename**: 10-flowchart-profile-bundle-patch-stack.webp

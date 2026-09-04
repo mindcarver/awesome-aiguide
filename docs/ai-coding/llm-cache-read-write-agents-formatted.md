@@ -11,7 +11,7 @@ description: "深入拆解大模型提示缓存的底层机制：为什么改一
 
 **TL;DR：** LLM 的缓存只认「**逐 token 完全相同的前缀**」。读缓存是拿回已经算过的内容，**0.1 倍价格**，只要前缀不动就必然命中；写缓存是首次把一段内容算进缓存，要付 **1.25 到 2 倍价格**，而且是一次投机，赌未来有人带相同前缀来读。对 coding agent，规则只有一条：**稳定内容放最前**（系统提示、工具定义、项目规则），**易变内容追加到最后**（工具结果、你的问题、时间戳）。谁把会变的东西混进前缀，谁就在为整段对话重复付全价。
 
-![复古图解：读缓存是低价复用，写缓存是为未来复用下注](../../assets/llm-cache-read-write-agents/01-comparison-read-write.png)
+![复古图解：读缓存是低价复用，写缓存是为未来复用下注](../../assets/llm-cache-read-write-agents/01-comparison-read-write.webp)
 
 ## 你为什么该在乎这个
 
@@ -90,7 +90,7 @@ vLLM 的实现里还藏了个细节：只有装满了的「整块」才进缓存
 
 还有一层更隐蔽的坑：共享内容必须对齐到块边界。假设请求 A 和 B 共享了前 10 个 token，块大小 4。块 1、块 2 各 4 个，命中 8 个；第 10 个 token 在第 3 块里，但第 3 块只有 2 个 token 是共享的，凑不满一个整块，**不缓存**。所以你们明明共享了 10 个 token，实际命中的只有 8 个。这也是为什么官方建议把大段稳定内容堆在一起，别让共享前缀刚好卡在半块上。
 
-![复古图解：一个 token 改动会让块 hash 链在失配处断开](../../assets/llm-cache-read-write-agents/02-framework-hash-chain.png)
+![复古图解：一个 token 改动会让块 hash 链在失配处断开](../../assets/llm-cache-read-write-agents/02-framework-hash-chain.webp)
 
 ## 读容易命中、写不容易，本质是确定性和投机性的区别
 
@@ -126,7 +126,7 @@ vLLM 的实现里还藏了个细节：只有装满了的「整块」才进缓存
 
 三条里最容易翻车的是第三条。很多人以为系统提示是稳定的，结果脚手架里藏了个 `datetime.now()`，每次请求都变，整个缓存链天天全 miss。
 
-![复古图解：缓存写入至少被复用一次才跨过回本线](../../assets/llm-cache-read-write-agents/03-infographic-break-even.png)
+![复古图解：缓存写入至少被复用一次才跨过回本线](../../assets/llm-cache-read-write-agents/03-infographic-break-even.webp)
 
 ## agent 的读写结构：大头是读，小头是写
 
@@ -165,7 +165,7 @@ agent 每个回合发送的完整上下文，顺序是：工具定义、系统�
 
 工具定义频繁变是另一个。工具定义也属于前缀，动态生成工具、每次请求都改 tool 定义的 agent 框架，一样不停破坏缓存。**工具定义要稳定，改就攒批改。**
 
-![复古图解：Agent 多轮对话中缓存读持续增长，新增内容只在末尾写入](../../assets/llm-cache-read-write-agents/04-timeline-agent-ledger.png)
+![复古图解：Agent 多轮对话中缓存读持续增长，新增内容只在末尾写入](../../assets/llm-cache-read-write-agents/04-timeline-agent-ledger.webp)
 
 ## 断点：缓存从哪里开始算
 
@@ -219,7 +219,7 @@ print(response.usage)
 
 工具定义也一样可以缓存。把 `cache_control` 标在 tools 数组里最后一个工具上，前面所有工具定义都被圈进缓存。代价是任何工具定义变动都会让相关缓存失效，所以**动态生成工具定义的框架要小心**。
 
-![复古图解：缓存断点应置于稳定层末尾，易变内容留在后方追加](../../assets/llm-cache-read-write-agents/05-flowchart-cache-breakpoint.png)
+![复古图解：缓存断点应置于稳定层末尾，易变内容留在后方追加](../../assets/llm-cache-read-write-agents/05-flowchart-cache-breakpoint.webp)
 
 ## 踩坑案例：你以为命中其实没命中
 
@@ -259,7 +259,7 @@ print(response.usage)
 
 还有个和 TTL 配套的机制叫**预热**。第一次请求是纯写，最贵。如果你知道这段前缀接下来会被大量复用，可以先发一个 `max_tokens: 0` 的请求，只把前缀算进缓存、不生成输出，等后面的真实请求直接命中。注意预热只对显式断点有效，自动缓存在预热这种占位请求上不生效。
 
-![复古图解：缓存命中会续期，长停顿和压缩都会破坏缓存连续性](../../assets/llm-cache-read-write-agents/06-infographic-ttl-compaction.png)
+![复古图解：缓存命中会续期，长停顿和压缩都会破坏缓存连续性](../../assets/llm-cache-read-write-agents/06-infographic-ttl-compaction.webp)
 
 ## 用 coding agent 时怎么占这个便宜
 

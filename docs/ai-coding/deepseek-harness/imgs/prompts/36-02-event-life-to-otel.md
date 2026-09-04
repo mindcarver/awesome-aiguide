@@ -1,6 +1,6 @@
 ---
 id: 36-02
-output: ../36-02-event-life-to-otel.png
+output: ../36-02-event-life-to-otel.webp
 aspect: 16:9
 style: notion
 watermark: false

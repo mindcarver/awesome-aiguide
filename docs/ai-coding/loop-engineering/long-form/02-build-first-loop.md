@@ -21,7 +21,7 @@
 
 前置说明：本教程基于 [cobusgreyling/loop-engineering](https://github.com/cobusgreyling/loop-engineering)（v1.2.1，2026-06 快照）的脚手架和 [breim/loop-harness](https://github.com/breim/loop-harness) 的核验思路。命令和文件结构以这两个仓库为准，但具体内容我会逐段贴出，你不需要先去读它们。
 
-![Daily Triage L1 Loop 全景](imgs/build-first-loop/01-framework-daily-triage-loop.png)
+![Daily Triage L1 Loop 全景](imgs/build-first-loop/01-framework-daily-triage-loop.webp)
 
 ## 为什么选 Claude Code 搭这条 loop
 
@@ -51,7 +51,7 @@ Addy Osmani 那篇标杆文里有个定义值得记住："a loop is a recursive 
 
 带着这个心智模型往下读，你会发现每一步的设计都在回答同一个问题：怎么让这条 loop 在你不在场的时候，安全地、可回溯地、不失控地跑下去。
 
-![Loop 作为递归控制系统的心智模型](imgs/build-first-loop/02-flowchart-control-model.png)
+![Loop 作为递归控制系统的心智模型](imgs/build-first-loop/02-flowchart-control-model.webp)
 
 ## 前置条件
 
@@ -150,7 +150,7 @@ npx @cobusgreyling/loop-init . --pattern daily-triage --tool claude-code
 
 如果 `npx` 拉脚手架失败（网络或 registry 问题），可以手动建出上面那套目录结构，文件内容照着后面几步贴的版本填。脚手架不是必需，它只是省时间。
 
-![Daily Triage 脚手架生成的目录骨架](imgs/build-first-loop/03-framework-directory-skeleton.png)
+![Daily Triage 脚手架生成的目录骨架](imgs/build-first-loop/03-framework-directory-skeleton.webp)
 
 ### 关于这套目录结构的几个设计决定
 
@@ -298,13 +298,13 @@ description: 每日读取仓库 issue/PR/CI 状态，分类写入 STATE.md，输
 
 这条权衡不只适用于 skill，也适用于后面所有的配置文件（denylist、kill switch 条件、VISION.md 的优先级清单）。默认从最小可用开始，用运行记录驱动扩展，是 loop engineering 一以贯之的工程纪律。
 
-![Daily Triage Skill 如何把 GitHub 信号分到四个队列](imgs/build-first-loop/04-flowchart-triage-skill.png)
+![Daily Triage Skill 如何把 GitHub 信号分到四个队列](imgs/build-first-loop/04-flowchart-triage-skill.webp)
 
 ## 第三步：搭好三层状态结构
 
 状态层是 loop 的脊柱。本地系列 [02](../02-five-primitives-and-state.md) 把状态拆成三层：运行规则层（`LOOP.md`）、当前世界状态层（`STATE.md`）、预算与审计层（`loop-budget.md` + `loop-run-log.md`）。这一步给每一层贴出完整文件内容。
 
-![Daily Triage 的三层状态结构](imgs/build-first-loop/05-framework-state-layers.png)
+![Daily Triage 的三层状态结构](imgs/build-first-loop/05-framework-state-layers.webp)
 
 ### 3.1 `LOOP.md`：运行规则层
 
@@ -630,7 +630,7 @@ jobs:
 
 这套设计也回应了开头那个心智模型：loop 的工程难度大头在失败处理。成功路径（agent 正常 triage、正常写报告）几乎不用设计，agent 自己就会跑。真正需要工程化的是失败路径：报告没生成怎么办、字段缺失怎么办、状态没更新怎么办、连续失败怎么暂停。上面四个校验加 kill switch 加 GitHub Actions 的 timeout，共同构成了这条 loop 的失败处理系统，它们比 skill 里的成功路径更重要。
 
-![GitHub Actions 中把断言固化成证明的 verifier 流程](imgs/build-first-loop/06-flowchart-actions-verifier.png)
+![GitHub Actions 中把断言固化成证明的 verifier 流程](imgs/build-first-loop/06-flowchart-actions-verifier.webp)
 
 ## 第五步：加 denylist、max attempts、kill switch
 
@@ -722,7 +722,7 @@ cadence 越密，发现问题越早，但成本不是线性上升，是乘法上
 
 第 5 条最关键：**kill switch 不自动恢复**。如果暂停 24h 后自动恢复，那 kill switch 就只是个延时开关，真正的故障（比如 skill 写错了导致连续失败）会被无限重试。强制人工恢复，逼你出事后看一眼再决定。
 
-![Daily Triage 运行时的三类安全护栏](imgs/build-first-loop/07-framework-safety-guards.png)
+![Daily Triage 运行时的三类安全护栏](imgs/build-first-loop/07-framework-safety-guards.webp)
 
 ## 第六步：跑一周，看 STATE.md 输出，判断是否升 L2
 
@@ -812,7 +812,7 @@ L2 引入自动动作后，如果两周内发现事故频发（草稿 PR 改错�
 
 很多人第一周会犯一个相反的错误：周一配好就不管了，周末才看，发现一周的报告全是噪音，于是判定"loop 没用"，废弃。这通常不是 loop 没用，是第一周没有花那几分钟去校准。loop 是个需要持续调教的系统，第一周的态度决定它能不能活到第二周。
 
-![第一周校准 Daily Triage Loop 的真实节奏](imgs/build-first-loop/08-timeline-first-week.png)
+![第一周校准 Daily Triage Loop 的真实节奏](imgs/build-first-loop/08-timeline-first-week.webp)
 
 ## 常见报错与坑
 
@@ -878,7 +878,7 @@ L2 引入自动动作后，如果两周内发现事故频发（草稿 PR 改错�
 
 判断 VISION.md 是不是该更新，有个简单信号：如果你周一早上看到上周五的 triage 报告，第一反应是"这都是些什么"，那基本就是 VISION.md 过时了。不要去调 skill、不要去调 cadence，先去改 VISION.md。本地系列 [03](../03-patterns-and-rollout-levels.md) 说"团队愿不愿意实际使用它写下的结果"是 L1 要验证的核心问题之一，VISION.md 是否新鲜是这条验证最直接的抓手。
 
-![第一条 Daily Triage Loop 的七个常见坑](imgs/build-first-loop/09-infographic-seven-pitfalls.png)
+![第一条 Daily Triage Loop 的七个常见坑](imgs/build-first-loop/09-infographic-seven-pitfalls.webp)
 
 ## 关于这条 loop 不适合做什么
 

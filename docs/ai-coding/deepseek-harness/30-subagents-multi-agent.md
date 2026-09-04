@@ -3,7 +3,7 @@
 > `ctx.subagents` 是一个命名 provider 注册表，六种后端共存，把委派分成两类：一次式是一个可丢弃的 run，拿一个结果就 dispose；可继续是一个持久子会话，带进程内 Activation，能多轮 FIFO 对话、能冷恢复、能上报给父。2026 年 8 月的三次改造把这一半继续往前推：可继续委派默认后台返回子 id、同一步骤里的兄弟委派并行重叠、子 agent 在委派那一刻快照父的沙箱覆盖并把审批钉死为 never。再往上一层，实验性的 Agent Teams 给"同级互相说话"补上持久 mailbox 和共享任务板。这篇沿"委派"这一条线从一次式走到团队协作，截至 2026-08 的代码状态。
 > 路线：接缝为什么多 provider 共存；一次式与可继续各自的契约；并行、后台优先、策略继承三个新默认；产品级 provider 的边界；Agent Teams 实验了什么。
 
-![子 agent 的命名 provider 注册表](imgs/30-01-provider-registry.png)
+![子 agent 的命名 provider 注册表](imgs/30-01-provider-registry.webp)
 
 ## 为什么这个接缝是多 provider 共存
 
@@ -13,7 +13,7 @@ bash、workflow 这些接缝，一个 context 一个实现：再注册第二个 
 
 模型面向的消费者有三个：`tool-subagent` 按 provider 委派，`tool-subagent-control` 提供全局的 `send_message`、`interrupt_agent`、`list_agents`，`tool-subagent-report` 给子 agent 自己一个 `report` 回报通道。
 
-![两类能力与两种发现方式](imgs/30-02-two-capability-discovery.png)
+![两类能力与两种发现方式](imgs/30-02-two-capability-discovery.webp)
 
 ## 两类能力，两种发现方式
 
@@ -23,9 +23,9 @@ provider 的能力分两类，发现方式完全不同，这个差别本身就�
 
 可继续能力的发现走另一条路：看可选方法 `prepareContinuable` 在不在。方法在，能力就在，靠 TypeScript 类型收窄。不需要单独的标志位，也就不存在标志位和实现漂移的问题。一次式子 agent 是 provider 自己组装的，能力得提前声明；可继续子 agent 是 continuation manager 组装的，provider 要表态的只剩愿不愿意参与创建。
 
-![一次式 run 的完整生命周期](imgs/30-03-one-shot-lifecycle.png)
+![一次式 run 的完整生命周期](imgs/30-03-one-shot-lifecycle.webp)
 
-![一次式失败结果的边界](imgs/30-04-one-shot-failure-boundary.png)
+![一次式失败结果的边界](imgs/30-04-one-shot-failure-boundary.webp)
 
 ## 一次式：一个 run，一个结果
 
@@ -39,9 +39,9 @@ provider 的能力分两类，发现方式完全不同，这个差别本身就�
 
 把一次式放在真实的 turn 里走一遍。模型决定委派，工具层从模型输入构造请求：prompt 和 parent 是必填，parent 顺手提供了子的 cwd、lineage 和派生深度；模型还要求了结构化输出。服务先查能力表，provider 的 `outputSchema` 是 true，放行。run 启动，`subagent/start` 落账，子 agent 在自己的扁平 scope 里干活。结果回来，`stopReason` 是 `max-tokens`：output 里是截断的半份分析，`structured` 缺席。消费者把这条映射成 isError 工具结果，附上剥过敏感内容的 diagnostic，dispose run 达到静默，`subagent/end` 配对闭合。模型看到失败，决定换个更窄的 prompt 重试。整个循环里没有任何持久状态被制造出来，也就没有任何东西需要清理。
 
-![可继续子 agent 的持久会话与 Activation](imgs/30-05-continuable-structure.png)
+![可继续子 agent 的持久会话与 Activation](imgs/30-05-continuable-structure.webp)
 
-![Activation 状态由运行事实推导](imgs/30-06-derived-activation-state.png)
+![Activation 状态由运行事实推导](imgs/30-06-derived-activation-state.webp)
 
 ## 可继续：持久会话加 Activation
 
@@ -61,7 +61,7 @@ Activation 明确不是请求、不是结果、不是取消、也不是 Task。�
 
 `startContinuable` 在 inbox 接受、拿到消息 id 时就 resolve，返回 `{ childId, messageId }`，不等 turn 开始、不等消息进日志。更早的任何失败触发回滚：销毁已建的句柄、移除 Activation、撤销父的归属，然后才拒绝，不留未配对的终态边。
 
-![followup 的唯一 FIFO 队列](imgs/30-07-followup-one-fifo.png)
+![followup 的唯一 FIFO 队列](imgs/30-07-followup-one-fifo.webp)
 
 ### followup：路由只看 Activation 驻留
 
@@ -71,7 +71,7 @@ Activation 明确不是请求、不是结果、不是取消、也不是 Task。�
 
 这条性质往下还有一层红利。既然每条续消息就是一个普通的 FIFO turn，那么会话日志里子 agent 的对话记录和任何普通会话长得一模一样：user 消息、assistant 回复、工具调用，按同一次序排布。审计一个多智能体会话不需要懂任何特殊协议，读日志就行；重放它也不需要，因为 turn 的排序权威只有一个，日志里的顺序就是执行过的顺序。
 
-![授权只认活的直接父](imgs/30-08-live-direct-parent.png)
+![授权只认活的直接父](imgs/30-08-live-direct-parent.webp)
 
 ### 授权：活的直接父，不是消息字段
 
@@ -81,7 +81,7 @@ follow-up 的授权来自一个确切的 live Agent 工具上下文。被认证�
 
 这条姿态在 dsh 里反复出现：jobs 靠 owner 不靠 id 保密，approval 的监听器按 agent 作用域隔离。共同点都是权威绑定在活的对象上，不绑定在可以被伪造、被复读的数据上。
 
-![signal 在 inbox 接受处截断](imgs/30-09-signal-admission-boundary.png)
+![signal 在 inbox 接受处截断](imgs/30-09-signal-admission-boundary.webp)
 
 ### 信号只在 inbox 接受前拥有
 
@@ -89,7 +89,7 @@ follow-up 的授权来自一个确切的 live Agent 工具上下文。被认证�
 
 还有一个精致的性质：投递和最终销毁竞争时，准入截断恰好一边赢。要么 inbox 接受了这条消息，要么这条消息留给之后的冷恢复。没有中间态，没有"算发出去了又算没发出去"。
 
-![interrupt 只停止当前轮次](imgs/30-10-interrupt-current-turn.png)
+![interrupt 只停止当前轮次](imgs/30-10-interrupt-current-turn.webp)
 
 ### interrupt：唯一的公共停止
 
@@ -97,7 +97,7 @@ follow-up 的授权来自一个确切的 live Agent 工具上下文。被认证�
 
 授权两种，刻意比投递权限宽，因为停止一个轮次是幂等的且不投递内容：`user` 是人客户端出示的持久直接父地址，不要求父 Agent 在线，这正是父离线时在线子仍能被停的原因；`ancestor` 是一个确切 live 的祖先 Agent 对象，其记录的 lineage 必须包含调用方。父地址不匹配的在线目标 `UNAUTHORIZED` 拒绝；目标不存在、已自然结算、或组合里没有 manager，是接受的 no-op，统一覆盖完成竞态和重复请求而不泄露持久目录信息。这个区分有意义：前者是安全拒绝，后者是无事可做，混在一起会把"没权限"和"没对象"搅成一笔糊涂账。Web 侧 Stop 按钮经 host RPC `subagent.interrupt` 走 `user` 授权，Send 继续入队，两个操作互相独立。
 
-![report 与 settled 的分工](imgs/30-11-report-and-settled.png)
+![report 与 settled 的分工](imgs/30-11-report-and-settled.webp)
 
 ### report 与 settled：子给父的两类消息
 
@@ -115,7 +115,7 @@ report 和 settled 通知是两套机制而不是一套，因为发起方、时�
 
 ## 2026-08 的三个新默认
 
-![同一步骤的兄弟子 agent 并行](imgs/30-12-parallel-siblings.png)
+![同一步骤的兄弟子 agent 并行](imgs/30-12-parallel-siblings.webp)
 
 ### 并行委派：同一步骤里的兄弟重叠执行
 
@@ -125,7 +125,7 @@ report 和 settled 通知是两套机制而不是一套，因为发起方、时�
 
 容量控制的边界要说清：`maxParallelToolCalls` 限制单个步骤中未结算的工具调用数量，前台子 agent 受它约束；后台和可继续调用在启动时即结算并释放池位，它们留下运行的子 agent 不受这个上限约束。LLM 提供方负责自身的配额。同类 harness 的先例一致：Claude Code 的 Task 工具无条件并发安全（上限 10），Codex 把委派做成异步 spawn/wait 信箱。
 
-![可继续委派的后台优先默认](imgs/30-13-background-first.png)
+![可继续委派的后台优先默认](imgs/30-13-background-first.webp)
 
 ### 后台优先：可继续委派省略参数就是后台
 
@@ -135,7 +135,7 @@ report 和 settled 通知是两套机制而不是一套，因为发起方、时�
 
 随之而来的一次重复是接受的：遵循指令的子会用 `report` 发最终交接，manager 又无条件发结算通知，已完成的运行可能两次投递相互重叠的最终内容。压掉任何一条都会丢东西：压 report 丢子的显式交接，压结算丢"子无法配合时"的运行时保证。
 
-![委派时刻的策略快照](imgs/30-14-policy-snapshot.png)
+![委派时刻的策略快照](imgs/30-14-policy-snapshot.webp)
 
 ### 策略继承：委派那一刻的快照
 
@@ -143,7 +143,7 @@ report 和 settled 通知是两套机制而不是一套，因为发起方、时�
 
 修复把捕获、追加这对函数挪进共享模块，两条路径都调用。`startContinuable` 在第一次 await 之前完成捕获：快照父的沙箱覆盖，把子审批策略钉定为 `'never'`（子 agent 的审批 2026-08-10 起永久钉死，理由是子没有和人交互的通道）。快照事件以 `source: 'delegation'` 追加进子自己的日志，排在任何 fork 种子之后。冷恢复不追加任何东西：持久化的子日志已经携带委派事件，回放日志本身就是状态。子 agent 的生效策略由持久化子日志拥有，不是当前 Activation，也不是发起恢复的父；父在驻留纪元之间的切换绝不会追溯性地改变一个持久化子 agent。想要新策略的父应该重新委派。进程外 provider（`acp`、`dsh-sdk`、`claude-code`、`codex`）没有 `prepareContinuable`，跨进程策略传播仍不在范围内。
 
-![provider 只参与首次创建](imgs/30-15-provider-first-create.png)
+![provider 只参与首次创建](imgs/30-15-provider-first-create.webp)
 
 ## provider 的边界：只贡献首次创建
 
@@ -153,7 +153,7 @@ report 和 settled 通知是两套机制而不是一套，因为发起方、时�
 
 provider 只参与首次创建：一次式的 `start`，或可继续的 `prepareContinuable`。后者返回的 `ContinuableCreateSpec` 只带 detached 的创建输入，当前就是可选的父历史 seed。文档的原话是，它是数据，不是能力：不带 Agent、不带句柄、不带投递、不带结果、不带销毁、不带 resume。可继续子 agent 的冷恢复根本不分发给 provider，manager fold 通用的 descriptor，通过 activation-owner 的 scope 调 `ctx.agents.resume()`，提交等待的 turn。
 
-![descriptor 是子 agent 的持久身份](imgs/30-16-persistent-descriptor.png)
+![descriptor 是子 agent 的持久身份](imgs/30-16-persistent-descriptor.webp)
 
 ### descriptor：子的持久身份
 
@@ -161,7 +161,7 @@ provider 只参与首次创建：一次式的 `start`，或可继续的 `prepare
 
 descriptor 是纯日志事件，永不进模型历史，压缩也保留它。头部还有一个 `seedLength` 字段标记 fork 谱系边界：这个子从父日志吃了多长的前缀，一查便知。
 
-![Codex 与 Claude Code 的产品 provider 路径](imgs/30-17-product-providers-jobs.png)
+![Codex 与 Claude Code 的产品 provider 路径](imgs/30-17-product-providers-jobs.webp)
 
 ## codex 与 claude-code：产品级的两条路
 
@@ -171,9 +171,9 @@ descriptor 是纯日志事件，永不进模型历史，压缩也保留它。头
 
 产品委派现在也支持后台。省略 `run_in_background` 或传 `false` 在前台等待；显式传 `true` 走通用后台 Job：同步完成 Job 预检和登记后返回父拥有的 Job id，不等产品启动，之后经 `job_output`、`job_list`、`job_kill` 和完成通知收集或取消。这条路径不新增产品专属的 id、状态或取消语义，全部复用通用作业运行时。后台 Job 仅存在于当前进程且由父拥有：父销毁后 Job 清理会取消 run，产品中间活动不公开，产品对话不可恢复。产品提供方的权限失败先进入同一个共享结果结构，再由前台或后台任一路径消费（2026-08-15 的非交互权限决策、2026-08-18 的失败事实决策负责细节）。
 
-![Agent Teams 的 Lead、邮箱与任务板](imgs/30-18-agent-teams.png)
+![Agent Teams 的 Lead、邮箱与任务板](imgs/30-18-agent-teams.webp)
 
-![共享 cwd 的协作边界](imgs/30-19-shared-cwd-boundary.png)
+![共享 cwd 的协作边界](imgs/30-19-shared-cwd-boundary.webp)
 
 ## Agent Teams：实验中的同级协作
 
@@ -187,7 +187,7 @@ descriptor 是纯日志事件，永不进模型历史，压缩也保留它。头
 
 实验性状态有机械强制，不只是文档标记：dsh 的 pack 与 publish 集合排除 `packages/experimental/` 下所有 manifest，这些包 `private: true`，发布包、app、Python runtime 通过 dependencies 依赖它们会被顶层检查拒绝。要试 Team 得用显式示例或实验性组合，已发布的基础组合不暴露它。这是"先在真实仓库条件下孵化、再谈稳定义务"的路线，promotion 前要过公开约定、测试证据、具名 owner 的评审。
 
-![深度、工具过滤与人设三枚旋钮](imgs/30-20-depth-tools-persona.png)
+![深度、工具过滤与人设三枚旋钮](imgs/30-20-depth-tools-persona.webp)
 
 ## 深度、工具过滤、人设
 
@@ -195,7 +195,7 @@ descriptor 是纯日志事件，永不进模型历史，压缩也保留它。头
 
 工具过滤在创建窗口里做 scoped `tools.restrict()`：被过滤的工具从子的提示里消失、也拒绝执行，一次可见性，两处同步。未知的工具名大声校验失败，不静默忽略。人设注册为 scoped 的 `deployment:persona` 段，只为这个子遮蔽部署的人设，插值用严格的 `{{…}}` 语法。子 agent 看到的世界和它的父刻意不同，这三样就是刻度的旋钮。
 
-![listChildren 的 live-preferred 纯读阶梯](imgs/30-21-live-preferred-enumeration.png)
+![listChildren 的 live-preferred 纯读阶梯](imgs/30-21-live-preferred-enumeration.webp)
 
 ## 枚举：不唤醒任何人的读
 
@@ -211,7 +211,7 @@ descriptor 是纯日志事件，永不进模型历史，压缩也保留它。头
 
 销毁走 drain。manager 卸载跑一个全 manager 的 drain，关准入、销毁每棵活森林；`drainContinuableDescendants` 限定到确切的活父；`drainContinuableChildren` 释放选定的直接子，父不对或身份过期就 `UNAUTHORIZED`。释放句柄一律子优先，并 await 每个选中的分支，个别失败不中断整体。持久 Session 活过拆除。结算 flush 会等 `ctx.sessions.flush(session)` 但忽略它的参与布尔，理由很硬：留着一个子会把它的祖先永久钉在 waiting 里。flush 被拒记日志，不让 Activation 失败。
 
-![并行委派、冷恢复与结算的完整协作](imgs/30-22-crash-and-collaboration.png)
+![并行委派、冷恢复与结算的完整协作](imgs/30-22-crash-and-collaboration.webp)
 
 ## 一个多轮协作的完整样本
 

@@ -1,7 +1,7 @@
 # 上下文、验证、权限：Claude Code 工程化绕不开的三道坎
 
-<!-- codex:cover ../../../assets/claude-code-engineering/01-context-validation-permission-cover.png -->
-![Claude Code 系列文章封面：上下文、验证、权限：Claude Code 工程化绕不开的三道坎](../../../assets/claude-code-engineering/01-context-validation-permission-cover.png)
+<!-- codex:cover ../../../assets/claude-code-engineering/01-context-validation-permission-cover.webp -->
+![Claude Code 系列文章封面：上下文、验证、权限：Claude Code 工程化绕不开的三道坎](../../../assets/claude-code-engineering/01-context-validation-permission-cover.webp)
 <!-- /codex:cover -->
 
 **TL;DR：** AI Coding 在真实项目中的失败，几乎不是模型能力不足，而是三个工程问题的叠加：上下文不完整导致误判、生成结果缺乏验证链路、权限边界过宽导致事故半径扩大。Claude Code 工程化的起点，是把这三个问题显式化并配好对应机制。

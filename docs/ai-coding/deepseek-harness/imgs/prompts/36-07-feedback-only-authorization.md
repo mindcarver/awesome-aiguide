@@ -1,6 +1,6 @@
 ---
 id: 36-07
-output: ../36-07-feedback-only-authorization.png
+output: ../36-07-feedback-only-authorization.webp
 aspect: 16:9
 style: notion
 watermark: false

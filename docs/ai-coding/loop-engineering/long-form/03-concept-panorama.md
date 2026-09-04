@@ -18,7 +18,7 @@
 
 这五句话是地图的骨架。下面逐层展开，先从最基础的"loop 和 prompt 的本质差别"开始。
 
-![从 Prompt 到 Loop 的四层演进坐标](imgs/01-framework-prompt-to-loop.png)
+![从 Prompt 到 Loop 的四层演进坐标](imgs/01-framework-prompt-to-loop.webp)
 
 ## 一句话定义 + 与 prompt 的本质差别
 
@@ -81,7 +81,7 @@ prompt ⊂ context ⊂ harness ⊂ loop
 
 这条"nested concerns, not replacing"的认知，是判断一个人是否真懂 loop engineering 的试金石。能说出"loop 不否定 prompt"的人，已经过了第一道概念关。
 
-![Prompt、Context、Harness 与 Loop 的套娃结构](imgs/02-framework-nested-layers.png)
+![Prompt、Context、Harness 与 Loop 的套娃结构](imgs/02-framework-nested-layers.webp)
 
 ### 四层演进逐层拆解：每层解决什么，留下什么
 
@@ -215,7 +215,7 @@ Loop 除了步骤，还关心：这件事会不会反复出现；这轮没处理
 
 把这四条边界划死，团队对齐时就有了共同语言。下次有人把 loop 当成 automation，或者把 loop 当成 workflow，或者把 loop 当成 harness 的同义词，你都能用这几张表把讨论拉回正轨。
 
-![Loop 与相邻概念的边界图](imgs/07-framework-boundary-map.png)
+![Loop 与相邻概念的边界图](imgs/07-framework-boundary-map.webp)
 
 ## 四代智能体循环谱系：ReAct → Plan-Execute → Reflexion → Loop Engineering
 
@@ -244,7 +244,7 @@ Loop engineering 不是凭空冒出来的新词。它是一条从 2022 年 10 �
 | **第三代：OODA/Magentic-One/多 agent**（2024） | OODA、Magentic-One、多 agent | 事件/定时 | 多 agent 各自 context | 策略级 reset + 步骤级 retry | 多 agent 互评 | Anthropic 多 agent 内部评测超单 agent 90.2%，但 token 约为单 agent 的 15 倍 |
 | **第四代：Loop Engineering 产品化**（2025–2026） | Ralph Loop、`/goal`、Cherny 并行流 | cron/webhook/手动 | 文件系统外置（state 从 context 剥离） | 外部 stop hook / 独立 evaluator | maker/checker 分离 + deterministic verifier | Codex `/goal` 单次 25 小时、1300 万 token、3 万行 |
 
-![AI 编程 agent 四代循环谱系](imgs/03-framework-four-generations.png)
+![AI 编程 agent 四代循环谱系](imgs/03-framework-four-generations.webp)
 
 读这张表有几个关键观察。
 
@@ -383,7 +383,7 @@ LangChain 给 agent 的定义是整个 loop engineering 圈子被引用最多的
 
 这给实操的启示是：搭一个完整的 loop engineering 体系，你需要同时带上两个框架。用 LangChain 的 4 层决定"我搭到第几层、每层用什么 primitive"；用 Addy 的原语检查"每一层我有没有漏掉 isolation 和 STATE"。两个框架的差集（LangChain 的 loop 4、Addy 的 isolation + STATE）是各自独占区，你必须两边都抄，才不漏。
 
-![Loop Engineering 的横轴原语与纵轴嵌套层级](imgs/04-framework-two-axis-map.png)
+![Loop Engineering 的横轴原语与纵轴嵌套层级](imgs/04-framework-two-axis-map.webp)
 
 ### LangChain 视角的盲区（必须知道的对冲）
 
@@ -437,7 +437,7 @@ Verifier 和 STATE 是状态中枢的两个关键原语，单拎出来强调。
 
 把五积木 + 状态中枢记下来，团队选型时就有了一张 checklist。任何一个 loop 方案，都可以用它来审计：trigger 接了吗？worktree 隔离了吗？skills 沉淀了吗？connectors 接了吗？sub-agents 分工了吗？verifier 分离了吗？STATE 持久化了吗？少任何一项，都很容易退化成"自动跑一次 prompt"。
 
-![五积木与状态中枢构成的 Loop 审计截面](imgs/08-framework-loop-primitives.png)
+![五积木与状态中枢构成的 Loop 审计截面](imgs/08-framework-loop-primitives.webp)
 
 ## OpenAI 的 harness 地基：loop 之前先把脚手架搭对
 
@@ -470,7 +470,7 @@ OpenAI 的对策是把知识库分层：AGENTS.md 只保留约 100 行，作用�
 
 贯穿这套强制的哲学一句话概括：**When documentation falls short, we promote the rule into code**（当文档不够时，我们把规则提升成代码）。文档是软约束，会被 agent 忽略；code（linter、test、CI）是硬约束，agent 躲不过。如果一个规则反复被违反，别再写进文档了，把它写进 linter。这句话值得每个写 AGENTS.md 的人贴在屏幕上。
 
-![OpenAI harness engineering 的三大地基](imgs/05-framework-harness-foundation.png)
+![OpenAI harness engineering 的三大地基](imgs/05-framework-harness-foundation.webp)
 
 ### 三件套：让 agent 自治维护 agent 用的知识库
 
@@ -513,7 +513,7 @@ Data Science Dojo 列出了六类失败模式，全部会在生产中出现：
 
 其中 silent failure 最难抓。工具在调、流量在走、监控一片绿色，但状态没变。Data Science Dojo 列出了这个问题，但没有给出解法。这也正是前面强调 maker/checker 分离和 deterministic verifier 必须存在的根本理由：你不能靠 agent 自己报告状态，必须有独立的外部验证。
 
-![Loop 生产环境的六类失败模式雷达](imgs/09-infographic-failure-modes.png)
+![Loop 生产环境的六类失败模式雷达](imgs/09-infographic-failure-modes.webp)
 
 ### 三债：loop 跑得越好，长期成本越糟
 
@@ -523,7 +523,7 @@ Data Science Dojo 列出了六类失败模式，全部会在生产中出现：
 
 三种债逐个拆。
 
-![有效 loop 带来的理解债、验证债与信任债](imgs/06-framework-three-debts.png)
+![有效 loop 带来的理解债、验证债与信任债](imgs/06-framework-three-debts.webp)
 
 **上下文债（comprehension debt / 理解债）**，最被反复点名的一种。TrueFoundry 的定义最干净：comprehension debt grows faster as the loop improves, the gap between what exists and what you understand compounds with every unread PR（理解债随 loop 改进而加速增长：系统真实状态和你对系统的理解之间的 gap，随每一个没人读的 PR 复合增长）。
 
@@ -596,7 +596,7 @@ Linas 点到了三债，但没给解法。这里补几条具体的还债机制�
 | **L2** | verifier + worktree 保护下做低风险小修复 | 自动修复 + 独立验证 + 隔离执行 | 中 |
 | **L3** | 较少人工盯盘的无人值守运行 | 24 小时自动响应，人只在判断点介入 | 高 |
 
-![Loop Engineering 的 L0 到 L3 投入成熟度阶梯](imgs/10-framework-maturity-ladder.png)
+![Loop Engineering 的 L0 到 L3 投入成熟度阶梯](imgs/10-framework-maturity-ladder.webp)
 
 多数团队失败的原因不在不会写 prompt，而是直接从"想省事"跳到"想全自动"。应该先做 L1，再谈 L2/L3。这是整个方法最务实的部分。
 

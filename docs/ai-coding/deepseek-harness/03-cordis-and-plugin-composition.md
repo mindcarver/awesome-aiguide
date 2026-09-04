@@ -23,7 +23,7 @@ Koishi（一个全插件化的跨平台聊天机器人框架）的作者 Shigma 
 
 Cordis 就是为解决这个问题生的。它的目标用一句话讲：让"加载一个插件"和"卸载一个插件"成为对等的、可逆的操作。不只是能装，还要能干净地拆。
 
-![注册与注销的可逆生命周期](imgs/03-cordis-and-plugin-composition/01-comparison-register-unregister.png)
+![注册与注销的可逆生命周期](imgs/03-cordis-and-plugin-composition/01-comparison-register-unregister.webp)
 
 ## 理论：两个编译期概念，搬进运行时
 
@@ -58,7 +58,7 @@ Cordis 的设计思想写在一篇论文里，标题是《A Programming Paradigm
 
 把两个维度合起来，Cordis 想兑现的承诺是：你可以把任意一堆插件以任意顺序装上去、拆下来、换掉，系统永远只反映"当前装着什么"，不残留、不混乱、不需要重启。这就是"时空可组合性"的工程含义。
 
-![时空可组合性的两个运行时维度](imgs/03-cordis-and-plugin-composition/02-framework-spatiotemporal-composability.png)
+![时空可组合性的两个运行时维度](imgs/03-cordis-and-plugin-composition/02-framework-spatiotemporal-composability.webp)
 
 ## Cordis 的来历：从 Koishi 里抽出来的元框架
 
@@ -78,7 +78,7 @@ DeepSeek Harness 对 Cordis 的态度也很说明问题：它没有把 Cordis �
 
 这是一个良性循环：Cordis 给了 DeepSeek Harness "一切皆插件"的工程保证，DeepSeek Harness 用 agent 的极端场景反过来给 Cordis 提真实的 bug 和硬化补丁。
 
-![Koishi、Cordis 与 DeepSeek Harness 的关系](imgs/03-cordis-and-plugin-composition/03-framework-cordis-lineage.png)
+![Koishi、Cordis 与 DeepSeek Harness 的关系](imgs/03-cordis-and-plugin-composition/03-framework-cordis-lineage.webp)
 
 ## 工程：五条范式，第五条是灵魂
 
@@ -104,7 +104,7 @@ DeepSeek Harness 对 Cordis 的态度也很说明问题：它没有把 Cordis �
 
 前四条单独拎出来，业界都不陌生：插件对象、服务定位器、依赖声明、事件总线，在各种框架里反复出现过。Cordis 不是靠这四条创新的，它是靠第五条把它们拧成一股绳。理解这一点很重要：前四条是"形状"，第五条是"地基"。没有第五条，前四条只是又一套 DI 容器；有了第五条，前四条每一条都获得了运行时可撤销、可热替换的能力。下面逐条拆，最后回到第五条讲它凭什么是灵魂。
 
-![Cordis 的五条工程范式](imgs/03-cordis-and-plugin-composition/04-framework-five-paradigms.png)
+![Cordis 的五条工程范式](imgs/03-cordis-and-plugin-composition/04-framework-five-paradigms.webp)
 
 ### 范式一：插件是实现了 Service 的对象
 
@@ -114,7 +114,7 @@ Cordis 的插件有三种合法形态，从最轻到最重，`Service` 和 `Cont
 - **形态二，对象插件，带一个 apply 方法**。导出一个对象，比如 `objectPlugin`：它有 `name: 'object-plugin'` 和一个 `apply(ctx: Context)` 方法，apply 做的事和形态一相同。
 - **形态三，类插件，继承 `Service`，要暴露能力给别人用时用它**。导出一个继承 `Service` 的类，比如 `MyService`：构造函数拿到 `ctx`，调用 `super(ctx, 'myService')` 完成注册。
 
-![插件的三种合法形态](imgs/03-cordis-and-plugin-composition/05-comparison-plugin-service-shapes.png)
+![插件的三种合法形态](imgs/03-cordis-and-plugin-composition/05-comparison-plugin-service-shapes.webp)
 
 三种形态背后是同一个机制：Cordis 加载一个插件时，给它一个 `ctx`（context），插件在 `apply(ctx)` 里声明自己贡献什么。函数形态够用时就用函数，只有当你需要把一个能力作为服务暴露给别的插件时，才升级到 `Service` 子类形态。
 
@@ -130,7 +130,7 @@ Cordis 的插件有三种合法形态，从最轻到最重，`Service` 和 `Cont
 
 这一条的本质是服务定位器模式：能力按名字注册，按名字查找，而不是按具体实现 import。好处是配置层可以决定挂哪个 provider，消费者代码一行都不用改。DeepSeek Harness 能让"换一个模型 provider 不用改业务代码"，根就在这里。
 
-![context 服务仓库与按 key 查找](imgs/03-cordis-and-plugin-composition/06-framework-context-service-repository.png)
+![context 服务仓库与按 key 查找](imgs/03-cordis-and-plugin-composition/06-framework-context-service-repository.webp)
 
 服务名是一个扁平的全局命名空间。官方占用了 `tools`、`llm`、`agents`、`fs`、`shell` 这些短名字，自己写的服务得加前缀避免撞名，这也是为什么 Cordis 文档建议第三方插件的服务名带命名空间。
 
@@ -148,7 +148,7 @@ Cordis 的做法是：别写顺序，写需求。一个需要 `greeter` 服务�
 
 这就是论文里 Reactive Coeffects 的工程含义：依赖不是启动时匹配一次就完事，而是运行时持续维护。传统 DI 是一张静态依赖图，启动时解析一次；Cordis 是一张会随 provider 增删而实时重连的动态图。所以 DeepSeek Harness 能做到"换掉 shell provider，所有注入 shell 的插件自动对着新实现重启"，也能做到改完模型 key 立即生效、不用重启：换 provider 是一次 context 变化，反应式机制把新 provider 接到了所有消费者上。这套动态性传统 DI 给不了。
 
-![inject 依赖如何随 provider 变化而重连](imgs/03-cordis-and-plugin-composition/07-flowchart-inject-reactive-dependencies.png)
+![inject 依赖如何随 provider 变化而重连](imgs/03-cordis-and-plugin-composition/07-flowchart-inject-reactive-dependencies.webp)
 
 可选依赖用 `ctx.get('greeter')` 在用的时候探一下，返回 undefined 就是没有，插件照常跑。
 
@@ -164,7 +164,7 @@ Cordis 的做法是：别写顺序，写需求。一个需要 `greeter` 服务�
 
 DeepSeek Harness 把"可以被多个协作插件拦截或作答"的决策都用 waterfall：`agent/request` 让插件能改写发给模型的请求，`approval/request` 让一个策略插件能代替用户作答。waterfall 的纪律是铁的：只观察或注解的监听器必须调 `next()`，不调就是故意短路。一个忘了写 `next()` 的日志监听器，会静默吞掉所有人的默认行为。
 
-![类型化事件与四种派发模式](imgs/03-cordis-and-plugin-composition/08-framework-typed-event-dispatch.png)
+![类型化事件与四种派发模式](imgs/03-cordis-and-plugin-composition/08-framework-typed-event-dispatch.webp)
 
 顺带一个关键点：`ctx.on()` 注册的监听器，本身就是一个可逆副作用。插件卸载时，它注册的所有监听器自动移除，你永远不用手写 `removeListener`。这就接到了第五条。
 
@@ -196,7 +196,7 @@ PENDING → LOADING → ACTIVE → UNLOADING → DISPOSED
 
 这里有个容易踩的细节：清理函数按注册的相反顺序执行，但多个异步清理函数是并发执行的。如果某些清理步骤必须串行，就把它们塞进同一个清理函数里 await。这个顺序规则是"路径无关"那条强性质的实现基础。
 
-![注册、卸载与清理的生命周期](imgs/03-cordis-and-plugin-composition/09-flowchart-reversible-effects-lifecycle.png)
+![注册、卸载与清理的生命周期](imgs/03-cordis-and-plugin-composition/09-flowchart-reversible-effects-lifecycle.webp)
 
 ### 为什么灵魂是第五条
 
@@ -250,7 +250,7 @@ DeepSeek Harness 自带两个 profile 模板：`web` 和 `headless`。它们在�
 
 这个顺序很关键：bundle 在下，用户层在上，命令行 overlay 最上。越上面的层优先级越高，能改写下面任何一层注册的内容。
 
-![profile、bundle 与 patch 的叠层顺序](imgs/03-cordis-and-plugin-composition/10-flowchart-profile-bundle-patch-stack.png)
+![profile、bundle 与 patch 的叠层顺序](imgs/03-cordis-and-plugin-composition/10-flowchart-profile-bundle-patch-stack.webp)
 
 patch 怎么改写？只有两种动作，且规则很硬：
 

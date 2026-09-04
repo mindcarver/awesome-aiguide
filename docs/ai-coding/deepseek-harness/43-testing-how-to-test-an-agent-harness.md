@@ -3,9 +3,9 @@
 > 测一个 agent harness 的难点不在写断言，在挡住两类假绿：一类是覆盖率造假，代码行全跑过了但产品在真实入口上是坏的；一类是自述造假，断言盯着的对象恰好是 agent 自己说的话。dsh 的答案是一套分层测试加几条纪律：五条 CI lane 各答一个问题，mock 只留在昂贵或不确定的边界，断言永远重新去读世界而不是读 agent 的自述。性能压测单拆出两条手动 lane，一条测高基数渲染，一条测十万分片的流式压力，它们拒绝时间断言的理由值得单独记一句：宿主速度不是正确性契约。
 > 最好的一份教材是 postmortem 0001：178 个单测全绿、行覆盖率 100%，真实的 Zed 编辑器一连上来就崩。这个案例把"为什么每层测试都不能互相替代"讲得比任何原则陈述都清楚。
 
-![agent harness 的测试难题](imgs/43-01-agent-test-problem.png)
+![agent harness 的测试难题](imgs/43-01-agent-test-problem.webp)
 
-![五条测试 lane](imgs/43-02-five-testing-lanes.png)
+![五条测试 lane](imgs/43-02-five-testing-lanes.webp)
 
 ## agent harness 的测试难在哪
 
@@ -35,9 +35,9 @@ Web browser snapshot 跑 `pnpm run test:web`，Chromium 把回放的浏览器输
 
 lane 的家族还在长。仓库 package.json 里还有 `test:gui`（跑 `packages/client` 和 `packages/host` 的 GUI 相关套件）、`test:issue-management`（issue 管理策略的 node 直跑测试）、`test:coverage:partitioned`。五条是主干，不是全部，这是我的归纳，依据是命令目录的当前形态。
 
-![unit property 与 coverage 的分工](imgs/43-03-unit-property-coverage.png)
+![unit property 与 coverage 的分工](imgs/43-03-unit-property-coverage.webp)
 
-![real API e2e 的位置](imgs/43-04-real-api-e2e.png)
+![real API e2e 的位置](imgs/43-04-real-api-e2e.webp)
 
 ## 一个完整的反面教材：postmortem 0001
 
@@ -55,9 +55,9 @@ lane 的家族还在长。仓库 package.json 里还有 `test:gui`（跑 `packag
 
 修复清单里除了删掉那行导出、换成 `ctx.get`，还有两件防复发的：加一个无 key 的 `session/new` e2e，把示例当真实子进程通过真实 Loader 启动，并验证过把坏导出还原时它会红；在 e2e 的 spawn 里设置 `TSX_TSCONFIG_PATH`，让模块解析指向源码而不是陈旧的 lib。postmortem 里的一句话值得原样记住：覆盖率证明代码行跑过，它不证明功能按发布的形态工作。
 
-![178 个绿灯的反面教材](imgs/43-05-178-green-postmortem.png)
+![178 个绿灯的反面教材](imgs/43-05-178-green-postmortem.webp)
 
-![真实入口的三条要求](imgs/43-06-real-entry-requirements.png)
+![真实入口的三条要求](imgs/43-06-real-entry-requirements.webp)
 
 ## 真实入口路径：三条具体要求
 
@@ -69,7 +69,7 @@ postmortem 的教训被沉淀成三条可执行的要求。
 
 测发布的产物。一个包的 bin 要在普通 node 下跑构建后的 `lib/bin.js`，因为 tsx 会掩盖一批失败：settle 竞争、模块解析、被吞掉的加载错误。built-artifact smoke（如 `packages/examples/*/tests/built-bin.e2e.ts`）必须保持绿，还要断言配置缺失时以非零码退出。postmortem 里那个陈旧 lib 骗过本地测试的事故，反过来也说明构建产物一旦参与解析就必须被显式测试拥有。
 
-![测试解析保持源码平面](imgs/43-07-source-plane-resolution.png)
+![测试解析保持源码平面](imgs/43-07-source-plane-resolution.webp)
 
 ## 测试解析：源码平面
 
@@ -79,7 +79,7 @@ postmortem 暴露的"陈旧 lib 骗过模块解析"被一条全局规则堵住�
 
 双份代码同时在场的故障形态值得说具体。测试进程里一旦同时加载了 src 的模块和 lib 的模块，两个文件各自持有自己的模块级状态，注册表、计数器、单例服务全是两份。症状是诡异的状态不一致：注册了却查不到，计数对不上，事件监听重复触发，而且每次复现的路径还不一样。把解析钉死在源码平面，等于把这一整类"测的不是你想的那份代码"从根上排除，让"加载的是哪份代码"从运气变成声明。
 
-![with-key 真 API 策略](imgs/43-08-with-key-strategy.png)
+![with-key 真 API 策略](imgs/43-08-with-key-strategy.webp)
 
 ## with-key 策略：不要吝啬真 API 测试
 
@@ -91,9 +91,9 @@ postmortem 暴露的"陈旧 lib 骗过模块解析"被一条全局规则堵住�
 
 每个 suite 没有 key 时 self-skip 是配套设计。跳过不是成本信号，是让无 key 的 CI 和无 key 的贡献者不被阻塞，同时保证有 key 的环境一跑就覆盖。每个示例自带无 key 和有 key 两套 smoke，两边互补而不冗余。真 API 测试自己的两个麻烦也要管住：一是慢和不稳，带 key 的断言偏向世界状态的强断言而不是输出文本的弱匹配，一次失败值得人看一眼而不是重试掩盖；二是费用和钥匙管理，provider 特定的 smoke 按环境变量分门别类，一个跑不起来的 suite 静默让位，不拖累整条 lane。仓库根的 `BENCHMARK.md` 目前只是一份三行的指引，指向 Python SDK 教程，叮嘱用独立 workspace 和 session id 跑基准任务：agent 层面的基准测试还没有体系化的车道，这是当前的真实状态。
 
-![可脚本的 LLM 故障服务器](imgs/43-09-scriptable-fault-server.png)
+![可脚本的 LLM 故障服务器](imgs/43-09-scriptable-fault-server.webp)
 
-![故障分类与恢复组合验证](imgs/43-10-recovery-combination.png)
+![故障分类与恢复组合验证](imgs/43-10-recovery-combination.webp)
 
 ## mock 的边界与一台故障服务器
 
@@ -105,7 +105,7 @@ mock 原则一句话：只 mock 昂贵或不确定的边界，LLM 适配器、�
 
 恢复测试之外还有属性测试补示例测试的盲区。协议形态的包（llm 的 BlockAssembler、session 的事件日志、tools 的参数 schema、agent-loop 的发送调度）各有一个 `fast-check` 驱动的 `tests/properties.spec.ts`，生成器调优成逼真但对抗性的输入，本地总耗时控制在远低于 10 秒。这套东西第一次运行就抓到一个真实 bug：同一索引处重复的 `block-end` 会改写已经完成的块。示例测试固定你想到的用例，属性测试撞你没写过的交错，两者是互补不是替代。
 
-![验证外部世界](imgs/43-11-verify-world.png)
+![验证外部世界](imgs/43-11-verify-world.webp)
 
 ## 验证世界，不验证自述
 
@@ -115,7 +115,7 @@ mock 原则一句话：只 mock 昂贵或不确定的边界，LLM 适配器、�
 
 配套的还有资源纪律。e2e 测试拥有自己的资源，在 `afterEach` 里 dispose，失败、重试、超时都要走到。共享 fixture 放普通的 `tests/harness.ts`，不放另一个 `*.e2e.ts`，因为 import 一个 spec 会重新注册它的 describe 块并复制真实 API 调用。
 
-![快照归属与爆炸半径](imgs/43-12-snapshot-ownership.png)
+![快照归属与爆炸半径](imgs/43-12-snapshot-ownership.webp)
 
 ## 快照的归属和复用
 
@@ -125,7 +125,7 @@ mock 原则一句话：只 mock 昂贵或不确定的边界，LLM 适配器、�
 
 不同 surface 的快照各有归属：ACP 场景在 `examples/<name>/tests/snapshots/`，headless 后端场景归 `examples/headless-agent` 的 canonical-event JSONL，交互终端旅程在 `apps/cli/tests/snapshots/`，浏览器渲染在 `apps/web/tests/snapshots/`。归属清晰的价值在 blast radius：一个 surface 的变更只动自己的快照目录。两个 SDK 必须同步更新，TypeScript 侧的 `examples/jsonrpc-agent/tests/snapshots/` 和 Python 侧的 `scripts/snapshots/python-sdk-single-exe/`，后者只由 python-runtime 的 CI job 跑。fixture 的保留策略也定死了：header 和 payload 保留，body 里的时间和序号信封省略，回放时合成；旧布局由 `scripts/migrate-packed-session-fixtures.ts` 迁移，不让历史 fixture 变成一次性负债。
 
-![HMR 清理测试](imgs/43-13-hmr-cleanup.png)
+![HMR 清理测试](imgs/43-13-hmr-cleanup.webp)
 
 ## HMR 安全测试
 
@@ -137,7 +137,7 @@ mock 原则一句话：只 mock 昂贵或不确定的边界，LLM 适配器、�
 
 功能测试回答行为对不对，性能测试回答扛不扛得住。两个问题的失败模式不同，所以性能压测独立成两条手动 lane，都不在 CI 门禁里，是开发者显式跑的诊断工具。
 
-![高基数渲染压力](imgs/43-14-high-cardinality-perf.png)
+![高基数渲染压力](imgs/43-14-high-cardinality-perf.webp)
 
 ### 高基数渲染：complex-history.perf
 
@@ -151,9 +151,9 @@ mock 原则一句话：只 mock 昂贵或不确定的边界，LLM 适配器、�
 
 时间数据通过 `console.info` 以 `WEB_PERF_RESULT` 前缀打成 JSON，含每窗口的平均值和 p95，人来看趋势。测试只在 replay 模式下运行，record 模式直接抛异常，因为同一个回放 override 每次产出同样的模型响应，测量才有可比性。
 
-![十万分片逐帧发布](imgs/43-15-100k-stream-stress.png)
+![十万分片逐帧发布](imgs/43-15-100k-stream-stress.webp)
 
-![两条非门禁性能 lane](imgs/43-16-manual-perf-lanes.png)
+![两条非门禁性能 lane](imgs/43-16-manual-perf-lanes.webp)
 
 ### 十万分片压力：web-stress
 
@@ -161,7 +161,7 @@ mock 原则一句话：只 mock 昂贵或不确定的边界，LLM 适配器、�
 
 压力场景是确定性的 `?fixture` 会话以独立于绘制的节奏发出 100,000 个 `reasoning-delta`，结尾标记证明事件经过生产会话归并并到达实时 Think 行。50 毫秒心跳和预先调度的 DOM 事件分别测量主线程停顿与交互延迟，250 毫秒预算用于识别明显回归（这是诊断阈值，不是 CI 门禁）。`DSH_WEB_STRESS_HEADFUL=1` 让开发者在可见浏览器里用 Performance 面板分析同一场景。这条 lane 的设计理由值得整段抄下来：性能边界必须位于会话接收与 React 发布之间，不能通过减慢生产方或丢弃原始事件来掩盖问题；按动画帧控制测试生产方节奏也不行，生产方会在渲染变慢时同步减速，让页面获得真实网络流不存在的隐式背压。配套的聚焦单测守住发布次数与抢占顺序，十万分片的工作负载不进默认套件。
 
-![测试体系的权衡](imgs/43-17-testing-tradeoffs.png)
+![测试体系的权衡](imgs/43-17-testing-tradeoffs.webp)
 
 ## 权衡
 
@@ -171,7 +171,7 @@ mock 原则一句话：只 mock 昂贵或不确定的边界，LLM 适配器、�
 
 per-file 100% 覆盖率对贡献者是持续的压力，每一行新代码都要有测试触达。它的回报是把死代码问题变成门禁信号，但代价是偶尔要为防御性分支写价值密度不高的测试，以及 pwsh 这类平台依赖的豁免逻辑本身也是维护面。属性测试和故障服务器这类装备的搭建成本也不低，收益要靠"第一次运行就抓到真 bug"这类事件持续证明，装备闲置时它看起来像负担。
 
-![测试体系总览](imgs/43-18-testing-summary.png)
+![测试体系总览](imgs/43-18-testing-summary.webp)
 
 ## 结论
 

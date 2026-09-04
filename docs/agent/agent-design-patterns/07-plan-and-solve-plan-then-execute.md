@@ -2,7 +2,7 @@
 
 Plan and Solve 出自论文 [Plan-and-Solve Prompting](https://arxiv.org/abs/2305.04091)（Wang et al., ACL 2023），核心思路是"先想清楚全局，再按计划执行"。相比 [ReAct](06-react-reasoning-action-loop.md) 的"边想边做"，Plan and Solve 更适合目标明确的复杂任务——先有完整的计划，再逐步执行，执行过程中根据反馈动态调整。
 
-![Plan and Solve 模式架构](images/plan_and_solve.png)
+![Plan and Solve 模式架构](images/plan_and_solve.webp)
 
 **TL;DR**：Plan and Solve 将任务分为规划（Planner）→ 执行（Executor）→ 重规划（Replanner）三个阶段。它最大的优势是全局视野和可审查性——人类可以在执行前审查计划。PS+ 变体比 zero-shot CoT 提升最高 +8%。成本上，5 步任务约 $0.015（用 GPT-4o 做规划 + GPT-4o-mini 做执行），比 ReAct 省 45%。适合目标明确的复杂任务，不适合探索性任务。
 

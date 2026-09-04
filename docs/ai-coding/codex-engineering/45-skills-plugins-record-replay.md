@@ -4,8 +4,8 @@
 
 Skill 是可复用工作流的作者格式，Plugin 是把 Skills、MCP Servers、连接器和 Hooks 打包分发的容器，Record & Replay 是在 macOS 上把一次可观察操作转成 Skill 草稿的制作方式。三者位于不同层，不能互相替代。
 
-<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/01-flowchart-operating-flow.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/01-flowchart-operating-flow.png)
+<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/01-flowchart-operating-flow.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/01-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 最稳的路径是先把流程写成最小 Skill，验证触发条件和结果，再用 Plugin 分发。录制产生的 Skill 仍需人工清理可变输入、隐含偏好和敏感信息；安装 Plugin 也不会自动授予其中 Hook、MCP 或连接器的运行权限。
@@ -20,8 +20,8 @@ Skill 是可复用工作流的作者格式，Plugin 是把 Skills、MCP Servers�
 
 可以把一套报销流程拆成菜谱、工具箱和示范录像。
 
-<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/02-infographic-concept-map.png -->
-![Notion 图解：三个名词其实是三种工件](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/02-infographic-concept-map.png)
+<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/02-infographic-concept-map.webp -->
+![Notion 图解：三个名词其实是三种工件](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/02-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 Skill 是菜谱。它写明何时使用、需要哪些输入、按什么步骤执行、怎样判断完成。Skill 可以带脚本、参考资料和模板。
@@ -51,8 +51,8 @@ Record & Replay 是示范录像经过整理后生成菜谱。Codex 观察一次�
 
 一个 Skill 至少是带 `SKILL.md` 的目录：
 
-<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/03-framework-system-framework.png -->
-![Notion 图解：Skill 是能力说明，不是后台服务](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/03-framework-system-framework.png)
+<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/03-framework-system-framework.webp -->
+![Notion 图解：Skill 是能力说明，不是后台服务](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/03-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 ```text
@@ -90,8 +90,8 @@ Codex 采用渐进披露。会话开始时只把 Skill 的名称、描述和路�
 
 一个 Plugin 的必需入口是 `.codex-plugin/plugin.json`。其他能力位于 Plugin 根目录：
 
-<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/04-timeline-lifecycle-timeline.png -->
-![Notion 图解：Plugin 解决的是分发和组合](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/04-timeline-lifecycle-timeline.png)
+<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/04-timeline-lifecycle-timeline.webp -->
+![Notion 图解：Plugin 解决的是分发和组合](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/04-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 ```text
@@ -173,8 +173,8 @@ Git 来源支持 `ref` 或 `sha` 选择器。团队分发应固定提交 SHA 或
 
 Plugin 安装只说明这个包在当前表面可用，不代表包内能力全部获准。
 
-<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/05-infographic-verification-guardrails.png -->
-![Notion 图解：权限链不能随 Plugin 一起打包转移](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/05-infographic-verification-guardrails.png)
+<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/05-infographic-verification-guardrails.webp -->
+![Notion 图解：权限链不能随 Plugin 一起打包转移](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/05-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 安装或启用 Plugin 不会自动信任其中的 Hook。Plugin Hook 是非托管 Hook，当前定义必须经过用户审核；管理员若需要强制 Hook，应使用托管配置。
@@ -189,8 +189,8 @@ Skill 自带脚本也不是纯文本。脚本执行仍受沙箱和审批控制�
 
 单仓库、单团队、没有外部连接的流程，先提交 repo Skill。它可跟代码一起审查，不需要额外 marketplace。
 
-<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/06-comparison-boundary-comparison.png -->
-![Notion 图解：何时停在 Skill，何时升级为 Plugin](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/06-comparison-boundary-comparison.png)
+<!-- wos:illustration codex-engineering/45-skills-plugins-record-replay/06-comparison-boundary-comparison.webp -->
+![Notion 图解：何时停在 Skill，何时升级为 Plugin](../../../assets/ai-coding-engineering-illustrations/codex-engineering/45-skills-plugins-record-replay/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 需要跨仓库安装、组合多个 Skill、附带 MCP 或连接器、维护版本和展示信息时，再做 Plugin。Plugin 增加了发布、缓存、权限和升级管理，只有分发收益超过这些维护成本时才划算。

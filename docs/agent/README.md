@@ -1,7 +1,7 @@
 # Agent 学习路径
 
 <p align="center">
-  <img src="../../assets/agent-learning-cover.png" alt="Agent 学习路径封面" width="100%" />
+  <img src="../../assets/agent-learning-cover.webp" alt="Agent 学习路径封面" width="100%" />
 </p>
 
 > 目标：帮助技术人从 LLM API 使用者，逐步成长为能设计、评测、上线 Agent 系统的开发者。

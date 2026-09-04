@@ -1,6 +1,6 @@
 ---
 id: 36-11
-output: ../36-11-redaction-waterfall.png
+output: ../36-11-redaction-waterfall.webp
 aspect: 16:9
 style: notion
 watermark: false

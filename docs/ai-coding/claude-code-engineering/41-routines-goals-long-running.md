@@ -6,8 +6,8 @@
 
 三个名字都与“持续工作”有关，生命周期却完全不同：
 
-<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/01-infographic-concept-map.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/01-infographic-concept-map.png)
+<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/01-infographic-concept-map.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/01-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 | 能力 | 触发方式 | 运行位置 | 会话关闭后 | 当前状态 |
@@ -28,8 +28,8 @@ Routines 当前面向启用了 Claude Code Web 的 Pro、Max、Team 和 Enterpri
 
 ### `/loop`：当前会话里的闹钟
 
-<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/02-flowchart-operating-flow.png -->
-![Notion 图解：先按生命周期选，不按功能名选](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/02-flowchart-operating-flow.png)
+<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/02-flowchart-operating-flow.webp -->
+![Notion 图解：先按生命周期选，不按功能名选](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/02-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 `/loop` 把提示按间隔重新投入当前会话，适合等待部署、轮询 PR 或定时查看日志：
@@ -46,8 +46,8 @@ Routines 当前面向启用了 Claude Code Web 的 Pro、Max、Team 和 Enterpri
 
 `/goal` 接受一个可验证的完成条件。Claude 执行一轮后，另一个轻量模型读取会话转录并判断目标是否达成；答案为否时，主会话继续下一轮。
 
-<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/03-infographic-verification-guardrails.png -->
-![Notion 图解：/goal ：每轮之后问一次“真的完成了吗”](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/03-infographic-verification-guardrails.png)
+<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/03-infographic-verification-guardrails.webp -->
+![Notion 图解：/goal ：每轮之后问一次“真的完成了吗”](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/03-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 ```sh
@@ -82,8 +82,8 @@ Routine 保存提示、一个或多个仓库及连接器，由 Anthropic 托管�
 
 第一，绿色运行状态只表示没有基础设施错误，不表示提示中的业务目标完成。要检查转录、产物和仓库状态。
 
-<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/04-framework-system-framework.png -->
-![Notion 图解：云端 Routine 的四个反直觉点](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/04-framework-system-framework.png)
+<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/04-framework-system-framework.webp -->
+![Notion 图解：云端 Routine 的四个反直觉点](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/04-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 第二，每次运行会重新克隆仓库的默认分支。本地未提交文件、当前工作树和个人 `~/.claude/skills` 不会跟过去。云端可用的是账号启用的能力、仓库提交的配置，以及 Routine 明确连接的资源。
@@ -98,8 +98,8 @@ Routine 保存提示、一个或多个仓库及连接器，由 Anthropic 托管�
 
 以“每天检查依赖更新并创建草案”为例，提示应把成功与失败都写成可见产物：
 
-<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/05-timeline-lifecycle-timeline.png -->
-![Notion 图解：一个可审计的长期工作流骨架](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/05-timeline-lifecycle-timeline.png)
+<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/05-timeline-lifecycle-timeline.webp -->
+![Notion 图解：一个可审计的长期工作流骨架](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/05-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 ```text
@@ -119,8 +119,8 @@ Routine 保存提示、一个或多个仓库及连接器，由 Anthropic 托管�
 
 `/loop` 成本最低，状态也最脆弱。`/goal` 能让 Agent 围绕终点迭代，但模型评估具有概率性，不应替代确定性的测试和门禁。Routines 解除了本地会话依赖，却引入全新克隆、网络限制、云端凭据、事件上限和预览期变更。
 
-<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/06-comparison-boundary-comparison.png -->
-![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/06-comparison-boundary-comparison.png)
+<!-- wos:illustration claude-code-engineering/41-routines-goals-long-running/06-comparison-boundary-comparison.webp -->
+![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/41-routines-goals-long-running/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 一个实用判断是：先问任务由什么唤醒，再问状态放在哪里，最后问谁判定完成。时间唤醒不等于完成判定，云端运行也不等于可靠交付。

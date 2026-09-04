@@ -1,6 +1,6 @@
 ---
 id: 36-03
-output: ../36-03-coordinator-sink-contract.png
+output: ../36-03-coordinator-sink-contract.webp
 aspect: 16:9
 style: notion
 watermark: false

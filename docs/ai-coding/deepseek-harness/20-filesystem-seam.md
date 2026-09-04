@@ -5,7 +5,7 @@
 
 ## 为什么文件系统要做成接缝
 
-![文件系统接缝将 Provider、策略和工具消费者解耦](imgs/20-01-filesystem-seam-layers.png)
+![文件系统接缝将 Provider、策略和工具消费者解耦](imgs/20-01-filesystem-seam-layers.webp)
 
 粗看，agent 读写文件就是几个函数：读、写、改、列目录。直接调 `fs.readFile` 不就行了？
 
@@ -19,7 +19,7 @@ agent 在远程沙箱里跑时，文件不在本地磁盘上，`fs.readFile` 读
 
 ## 不透明的目标身份
 
-![不透明目标身份与原子操作契约](imgs/20-02-opaque-target-contract.png)
+![不透明目标身份与原子操作契约](imgs/20-02-opaque-target-contract.webp)
 
 每个操作的第一步，都是把用户给的路径解析成一个不透明的后端目标。`FsTarget` 有两个字段：`targetKey` 是不透明 key，消费者被明文禁止解析它，也不能假设它是本地绝对路径；`displayPath` 是给模型和 UI 看的路径，可能是本地绝对路径、工作区相对路径或远程 URI。
 
@@ -33,7 +33,7 @@ agent 在远程沙箱里跑时，文件不在本地磁盘上，`fs.readFile` 读
 
 ## 新鲜度令牌与元数据
 
-![版本令牌让观察结果可验证](imgs/20-03-version-token-freshness.png)
+![版本令牌让观察结果可验证](imgs/20-03-version-token-freshness.webp)
 
 `FsVersion` 是另一个 branded 不透明令牌，write 和 edit 靠它防陈旧。本地后端从高分辨率 stat 身份和新鲜度字段派生它，远程后端可能用 revision id。策略层记录它做陈旧检查，消费者不解释它。把版本做成不透明令牌而不是时间戳或计数器，是因为不同后端对"什么是一次变更"的定义不同：本地是 inode 身份加 mtime 纳秒，远程是服务端 revision。令牌化之后，后端各自用最诚实的方式实现，消费者只做一件事，比较。
 
@@ -47,7 +47,7 @@ agent 在远程沙箱里跑时，文件不在本地磁盘上，`fs.readFile` 读
 
 ## 读取的三种形态与读取窗口
 
-![完整读取、窗口读取和不存在三种观察形态](imgs/20-04-three-observation-shapes.png)
+![完整读取、窗口读取和不存在三种观察形态](imgs/20-04-three-observation-shapes.webp)
 
 读取有三个原语，对应三种消费形态。
 
@@ -59,7 +59,7 @@ agent 在远程沙箱里跑时，文件不在本地磁盘上，`fs.readFile` 读
 
 ## write 与 edit：临界区里的护栏
 
-![写入和编辑在临界区内分别校验护栏](imgs/20-05-write-edit-guards.png)
+![写入和编辑在临界区内分别校验护栏](imgs/20-05-write-edit-guards.webp)
 
 这是文件系统设计最精巧的部分。`writeText` 和 `editText` 的护栏都是可选的，类型是 `FsWriteIntent`，两个变体：`createIfAbsent` 表示目标不存在才建，已存在则报 `FS_NOT_OBSERVED`；`replaceIfVersion` 表示版本匹配才替换，否则报 `FS_STALE_VERSION`。
 
@@ -75,7 +75,7 @@ agent 在远程沙箱里跑时，文件不在本地磁盘上，`fs.readFile` 读
 
 ## 缺席也是一种观察
 
-![未观察、存在和缺席构成三态观察](imgs/20-06-absence-observation.png)
+![未观察、存在和缺席构成三态观察](imgs/20-06-absence-observation.webp)
 
 2026 年 8 月上旬的一次修复给这套语义补上了关键一块，值得完整讲。此前的策略只记录成功的读取和变更：会话读过一个文件，外部命令把它删了，第一次带护栏的变更会正确地因陈旧失败，模型按错误指令重读，重读返回 `FS_NOT_FOUND`，但那次失败没有记录任何东西，策略表里还留着旧的存在版本。于是写入继续选 `replaceIfVersion`，provider 继续拒绝缺失目标，"重读再重试"的恢复指令变成了一个走不出去的循环。
 
@@ -87,7 +87,7 @@ agent 在远程沙箱里跑时，文件不在本地磁盘上，`fs.readFile` 读
 
 ## 一次竞态的解剖
 
-![从 v7 到 v8 的竞态被版本护栏拒绝](imgs/20-07-race-anatomy.png)
+![从 v7 到 v8 的竞态被版本护栏拒绝](imgs/20-07-race-anatomy.webp)
 
 把前面的机制放进一个具体场景，看它们怎么咬合。
 
@@ -103,7 +103,7 @@ agent 重读，读到 `FS_NOT_FOUND`，同时策略层记下缺席。它再发�
 
 ## read-before-edit：一层策略，不是 provider 内置
 
-![read-before-edit 位于可替换的策略层](imgs/20-08-policy-not-provider.png)
+![read-before-edit 位于可替换的策略层](imgs/20-08-policy-not-provider.webp)
 
 现在讲最反常识的部分的机制细节。"先读再改"由 `dsh-fs-observation-policy` 实现，它不是服务，不注册任何 context 贡献，纯靠监听 `fs/*` 事件存在。
 
@@ -115,7 +115,7 @@ owner 从事件的 actor 派生，通常是执行的 agent 的会话，策略包
 
 ## 共享词汇表，发射方不依赖监听方
 
-![ctx.fs 以共享事件词汇表解耦监听方](imgs/20-09-shared-vocabulary-events.png)
+![ctx.fs 以共享事件词汇表解耦监听方](imgs/20-09-shared-vocabulary-events.webp)
 
 事件层有三个事件，两种性格。
 
@@ -125,7 +125,7 @@ owner 从事件的 actor 派生，通常是执行的 agent 的会话，策略包
 
 ## 局部读取就能授权编辑
 
-![局部读取携带版本令牌即可授权编辑](imgs/20-10-window-read-authorizes-edit.png)
+![局部读取携带版本令牌即可授权编辑](imgs/20-10-window-read-authorizes-edit.webp)
 
 很多人以为，要安全地编辑一个文件，得先把它整个读过。dsh 的答案是不必，而且这条答案的依据很硬。
 
@@ -137,7 +137,7 @@ owner 从事件的 actor 派生，通常是执行的 agent 的会话，策略包
 
 ## 与沙箱共享执行世界
 
-![ctx.fs 与 bash 共用同一沙箱和审批边界](imgs/20-11-shared-sandbox-world.png)
+![ctx.fs 与 bash 共用同一沙箱和审批边界](imgs/20-11-shared-sandbox-world.webp)
 
 2026 年 7 月中的跨工具族改造之后，`writeText` 和 `editText` 都接一个可选的 `sandboxPolicy` 参数（模式加工作区根）。沙箱后端按它围栏这次写，裸后端忽略它。
 
@@ -149,7 +149,7 @@ owner 从事件的 actor 派生，通常是执行的 agent 的会话，策略包
 
 ## 另一个消费者：str_replace_editor
 
-![多种编辑工具复用同一观察策略](imgs/20-12-second-consumer.png)
+![多种编辑工具复用同一观察策略](imgs/20-12-second-consumer.webp)
 
 同一个 `ctx.fs` 上还挂着一个风格完全不同的消费者。`dsh-tool-str-replace-editor` 注册 Claude 风格的 `str_replace_editor` 工具，命令是 view、create、str_replace、insert 四个：带行号查看、过滤后的两层目录列表、唯一字面量替换、规范插入边界。它服务于需要与 Claude SWE 约定兼容的部署（一个最小 preset 把它和持久 bash 组合起来跑 RL），和原生 read/write/edit 并存不冲突。
 
@@ -157,7 +157,7 @@ owner 从事件的 actor 派生，通常是执行的 agent 的会话，策略包
 
 ## 文件 IO 没有超时
 
-![取消发生在原子发布前而非任意超时](imgs/20-13-cancellation-before-publish.png)
+![取消发生在原子发布前而非任意超时](imgs/20-13-cancellation-before-publish.webp)
 
 read、write、edit 不接超时参数，provider 契约也不上截止时间。
 
@@ -167,7 +167,7 @@ read、write、edit 不接超时参数，provider 契约也不上截止时间。
 
 ## 错误分类：稳定码
 
-![稳定错误码对应明确的恢复动作](imgs/20-14-stable-error-codes.png)
+![稳定错误码对应明确的恢复动作](imgs/20-14-stable-error-codes.webp)
 
 文件系统失败用稳定的错误码字符串，由 `HarnessError` 子类携带。工具注册表在错误结果上保留名字和码，重试、权限、UI 层不用解析消息就能分支。封闭联合共十三个码：`FS_NOT_FOUND`、`FS_NOT_DIRECTORY`、`FS_NOT_TEXT`、`FS_NOT_REGULAR_FILE`、`FS_TOO_LARGE`、`FS_PERMISSION_DENIED`、`FS_SANDBOX_DENIED`、`FS_IO_ERROR`、`FS_STALE_VERSION`、`FS_NOT_OBSERVED`、`FS_AMBIGUOUS_EDIT`、`FS_EDIT_NOT_FOUND`、`FS_ABORTED`。
 
@@ -175,7 +175,7 @@ read、write、edit 不接超时参数，provider 契约也不上截止时间。
 
 ## 权衡与局限
 
-![原子发布避免检查和写入之间的 TOCTOU](imgs/20-15-atomic-no-overwrite.png)
+![原子发布避免检查和写入之间的 TOCTOU](imgs/20-15-atomic-no-overwrite.webp)
 
 这套设计把一部分可靠性押在部署约定和监听器自律上，换来的正交性有具体的价码。
 
@@ -191,7 +191,7 @@ read-before-edit 是部署约定，不是强制不变量。单槽 waterfall 的�
 
 ## 结论
 
-![可靠的 Filesystem 接缝由四项要素共同支撑](imgs/20-16-seam-summary.png)
+![可靠的 Filesystem 接缝由四项要素共同支撑](imgs/20-16-seam-summary.webp)
 
 `ctx.fs` 把文件操作拆成能力、策略、消费三层，靠 `fs/*` 事件共享词汇表：provider 只管原子读写和版本令牌，read-before-edit 是可选策略插件加上的护栏，工具不依赖策略插件的存在。护栏校验在变更临界区内部，先版本后匹配，陈旧报陈旧；发布用硬链接这样的不覆盖原语，护栏的闭合不依赖事前检查。缺席是和存在平级的观察，删除后的恢复链每一步都有明确的码和指令；窗口化读取靠版本令牌就能授权编辑，不必读全文。沙箱模式通过同一个参数进入 write 和 edit，两个工具家族共享同一套升级词汇。"换后端"（本地、沙箱、E2B 远程）和"换策略"（是否 read-before-edit）是两个正交的轴，这就是接缝的价值。
 

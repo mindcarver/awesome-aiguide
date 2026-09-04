@@ -2,7 +2,7 @@
 
 ReAct（Reasoning + Acting）是最经典的智能体设计模式，出自 2022 年的论文 [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)（ICLR 2023）。它将推理和行动交织在一个循环里，让模型在"想"和"做"之间交替推进，而不是纯靠推理猜测答案。
 
-![ReAct 模式架构](images/react.png)
+![ReAct 模式架构](images/react.webp)
 
 **TL;DR**：ReAct 的核心是 Thought→Action→Observation 循环——先想清楚下一步做什么，执行一个动作，观察结果，再想下一步。它在 HotpotQA 上比纯推理的 CoT 提升 +34%（ALFWorld），但每次循环都消耗一次 LLM 调用，5 步任务的成本约 $0.15。适合探索性任务，不适合步骤可预知的确定性任务。
 

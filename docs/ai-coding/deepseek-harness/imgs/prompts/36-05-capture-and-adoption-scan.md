@@ -1,6 +1,6 @@
 ---
 id: 36-05
-output: ../36-05-capture-and-adoption-scan.png
+output: ../36-05-capture-and-adoption-scan.webp
 aspect: 16:9
 style: notion
 watermark: false

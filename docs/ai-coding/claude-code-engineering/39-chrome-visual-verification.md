@@ -12,8 +12,8 @@
 
 一张登录页截图只能证明某个时刻画面存在。它不能回答按钮是否可点、错误文案是否由真实校验触发、请求是否返回 401、控制台是否抛异常，也不能证明键盘焦点和跳转路径正确。
 
-<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/01-framework-system-framework.png -->
-![Notion 图解：截图为什么经常给出假信心](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/01-framework-system-framework.png)
+<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/01-framework-system-framework.webp -->
+![Notion 图解：截图为什么经常给出假信心](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/01-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 视觉验证至少要形成四类证据中的多项组合：
@@ -29,8 +29,8 @@
 
 Claude Code 通过 Claude in Chrome 扩展控制可见的 Chromium 浏览器窗口。浏览器动作实时发生，并共享当前浏览器登录态。2026-07-22 的官方文档要求直接 Anthropic 方案，并通过 `/login` 登录；API key、`claude setup-token` 长期令牌以及 Bedrock、Google Cloud、Microsoft Foundry 等第三方 provider 不能直接启用这套集成。
 
-<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/02-flowchart-operating-flow.png -->
-![Notion 图解：连接层：CLI、Native Messaging 和扩展](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/02-flowchart-operating-flow.png)
+<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/02-flowchart-operating-flow.webp -->
+![Notion 图解：连接层：CLI、Native Messaging 和扩展](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/02-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 浏览器支持范围存在官方资料冲突。Claude Code 文档写明支持 Chrome、Edge，并能检测 Brave、Arc、Vivaldi、Opera 等 Chromium 浏览器；2026-07-17 更新的官方 Chrome Web Store 页面却写着其他 Chromium 浏览器不受支持。公开资料无法解释这项差异，生产验收应保守使用 Chrome 或 Edge，把其他浏览器视为未确认。WSL 不受支持。
@@ -62,8 +62,8 @@ com.anthropic.claude_code_browser_extension.json
 
 站点级权限继承自 Chrome 扩展设置。扩展决定 Claude 可以在哪些站点浏览、点击和输入。Claude Code 的项目权限不能替代浏览器站点权限。
 
-<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/03-comparison-boundary-comparison.png -->
-![Notion 图解：权限层：读取与改变状态要分开](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/03-comparison-boundary-comparison.png)
+<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/03-comparison-boundary-comparison.webp -->
+![Notion 图解：权限层：读取与改变状态要分开](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/03-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 Plan mode 下，官方当前分类如下：
@@ -81,8 +81,8 @@ Plan mode 下，官方当前分类如下：
 
 以 `localhost:3000/login` 的表单校验为例，先把验收条件写成观察项，不要只说「看看页面是否正常」：
 
-<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/04-timeline-lifecycle-timeline.png -->
-![Notion 图解：一份端到端验收合同](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/04-timeline-lifecycle-timeline.png)
+<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/04-timeline-lifecycle-timeline.webp -->
+![Notion 图解：一份端到端验收合同](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/04-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 ```text
@@ -129,8 +129,8 @@ Claude 可以操作已登录网站，并不表示它应自动处理 MFA 或验�
 
 一次 UI 验收的最小证据包可以包含：
 
-<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/05-infographic-concept-map.png -->
-![Notion 图解：保存什么，才能让别人复核](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/05-infographic-concept-map.png)
+<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/05-infographic-concept-map.webp -->
+![Notion 图解：保存什么，才能让别人复核](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/05-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 ```text
@@ -150,8 +150,8 @@ Chrome 工具可以把 screenshot 保存到磁盘并返回路径。官方 change
 
 扩展未连接，先处理连接层；页面打不开，再检查本地服务和 URL；元素找不到，记录当前 URL、DOM 文本和截图，确认是不是跳到了登录页；点击无响应，检查模态框、disabled 状态和 console；流程结束但结果不对，回到 network 和最终 DOM，不要继续盲点。
 
-<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/06-infographic-verification-guardrails.png -->
-![Notion 图解：失败时按层排查](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/06-infographic-verification-guardrails.png)
+<!-- wos:illustration claude-code-engineering/39-chrome-visual-verification/06-infographic-verification-guardrails.webp -->
+![Notion 图解：失败时按层排查](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/39-chrome-visual-verification/06-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 站点权限拒绝与 Claude Code 工具权限拒绝是两套错误来源。前者去扩展设置检查域名授权，后者检查会话 permission mode 和 settings。把两套权限都放开不是排障捷径，最小化授权才能让失败原因可解释。

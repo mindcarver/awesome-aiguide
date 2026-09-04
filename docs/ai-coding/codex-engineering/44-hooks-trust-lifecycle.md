@@ -4,8 +4,8 @@
 
 Codex Hooks 不是“放进 `hooks.json` 就会执行”的回调。一个非托管 Hook 要经过配置发现、来源合并、项目层信任、定义哈希审核、事件匹配和命令执行；定义发生变化后，原有信任失效，Codex 会跳过它，直到用户重新审核。
 
-<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/01-flowchart-operating-flow.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/01-flowchart-operating-flow.png)
+<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/01-flowchart-operating-flow.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/01-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 团队应把 Hooks 当作可执行供应链管理。项目 Hook 用于版本化约束，管理员 Hook 用于强制策略，`--dangerously-bypass-hook-trust` 只适合已经在 Codex 外部完成来源审核的一次性运行。
@@ -20,8 +20,8 @@ Codex Hooks 不是“放进 `hooks.json` 就会执行”的回调。一个非托
 
 脚本文件像行李，`hooks.json` 像托运单。托运单写了行李从哪里来、何时装机，却不代表安检已经放行。Codex 会给当前 Hook 定义计算哈希，用户审核的是这份具体定义。命令、路径、matcher 或位置变化后，哈希或 Hook key 可能变化，系统要求重新审核。
 
-<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/02-infographic-verification-guardrails.png -->
-![Notion 图解：先把 Hook 看成机场安检通道](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/02-infographic-verification-guardrails.png)
+<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/02-infographic-verification-guardrails.webp -->
+![Notion 图解：先把 Hook 看成机场安检通道](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/02-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 一次 Hook 运行经过以下路径：
@@ -50,8 +50,8 @@ Codex Hooks 不是“放进 `hooks.json` 就会执行”的回调。一个非托
 
 官方文档当前列出 10 个事件：
 
-<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/03-framework-system-framework.png -->
-![Notion 图解：当前生命周期事件](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/03-framework-system-framework.png)
+<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/03-framework-system-framework.webp -->
+![Notion 图解：当前生命周期事件](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/03-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 | 作用域 | 事件 | 常见用途 |
@@ -147,8 +147,8 @@ hooks = false
 
 非托管命令 Hook 第一次出现时是未信任状态。Codex 根据当前定义计算 `currentHash`，通过 `/hooks` 审核后，把对应 `trusted_hash` 记录到用户控制的 `hooks.state`。后续加载会比较当前哈希与已信任哈希：
 
-<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/04-infographic-concept-map.png -->
-![Notion 图解：Hash trust 审核了什么](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/04-infographic-concept-map.png)
+<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/04-infographic-concept-map.webp -->
+![Notion 图解：Hash trust 审核了什么](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/04-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 - 两者相同，Hook 可以运行。
@@ -170,8 +170,8 @@ codex --dangerously-bypass-hook-trust
 
 每个命令 Hook 从标准输入接收一个 JSON 对象，常见字段包括 `session_id`、`cwd`、`hook_event_name`、`model` 和可能存在的 `transcript_path`。Turn 级事件还会提供 `turn_id`。
 
-<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/05-timeline-lifecycle-timeline.png -->
-![Notion 图解：Hook 输出怎样控制生命周期](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/05-timeline-lifecycle-timeline.png)
+<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/05-timeline-lifecycle-timeline.webp -->
+![Notion 图解：Hook 输出怎样控制生命周期](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/05-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 `transcript_path` 方便诊断，但官方不把 transcript 格式承诺为稳定接口。需要长期集成时，优先使用 Hook 事件字段或 App Server schema，不要把 JSONL 内部结构写死在策略脚本里。
@@ -223,8 +223,8 @@ Codex 不负责把 `/enterprise/hooks` 中的脚本分发到设备。管理员�
 
 Hooks 的优势是确定性：相同事件能稳定触发脚本，适合审计、输入检查和完成条件验证。代价是它把 shell 代码放进 Agent 生命周期，错误脚本会增加延迟，也可能读取会话内容或修改外部状态。
 
-<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/06-comparison-boundary-comparison.png -->
-![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/06-comparison-boundary-comparison.png)
+<!-- wos:illustration codex-engineering/44-hooks-trust-lifecycle/06-comparison-boundary-comparison.webp -->
+![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/codex-engineering/44-hooks-trust-lifecycle/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 Hash trust 能拦住未经复审的定义变化，却不能证明受信任脚本永远安全。脚本本身若加载未固定依赖、读取可变远端内容或调用另一个可执行文件，顶层命令哈希不等于整条供应链不可变。

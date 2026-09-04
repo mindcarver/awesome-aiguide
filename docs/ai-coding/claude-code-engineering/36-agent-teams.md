@@ -10,8 +10,8 @@
 
 把「并行」理解成「多开几个 Claude」很容易得到坏结果。假设 lead 把认证重构拆给四个 teammates，却让它们都编辑 `src/router.ts`。每个实例看到的是自己的上下文，Agent Teams 又不会自动给 teammates 创建独立 worktree。后写入的内容可能覆盖先写入的内容，任务列表显示完成也不能证明合并正确。
 
-<!-- wos:illustration claude-code-engineering/36-agent-teams/01-infographic-concept-map.png -->
-![Notion 图解：一个反例：四个 Agent 同时改同一份路由文件](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/01-infographic-concept-map.png)
+<!-- wos:illustration claude-code-engineering/36-agent-teams/01-infographic-concept-map.webp -->
+![Notion 图解：一个反例：四个 Agent 同时改同一份路由文件](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/01-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 适合团队的拆法是让边界跟文件所有权一致：一个 teammate 研究权限模型，一个修改服务层，一个补测试，一个只做审查。它们可以把发现发给彼此，但不要同时占有同一份文件。
@@ -45,8 +45,8 @@ Agent Teams
              Teammate A <--> Teammate B
 ```
 
-<!-- wos:illustration claude-code-engineering/36-agent-teams/02-framework-system-framework.png -->
-![Notion 图解：通信拓扑决定了它与 Subagents 的差别](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/02-framework-system-framework.png)
+<!-- wos:illustration claude-code-engineering/36-agent-teams/02-framework-system-framework.webp -->
+![Notion 图解：通信拓扑决定了它与 Subagents 的差别](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/02-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 Subagent 像被调用的专用函数。它拿到委派提示，在独立上下文里工作，把结果交回调用者。两个 Subagents 不会直接互相发消息，主会话承担全部串联。
@@ -64,8 +64,8 @@ Team 更像一个小型协作组。lead 仍负责拆解和汇总，但 teammates
 
 Agent Teams 默认关闭。可以在 shell 中临时启用：
 
-<!-- wos:illustration claude-code-engineering/36-agent-teams/03-flowchart-operating-flow.png -->
-![Notion 图解：启用后，磁盘上发生了什么](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/03-flowchart-operating-flow.png)
+<!-- wos:illustration claude-code-engineering/36-agent-teams/03-flowchart-operating-flow.webp -->
+![Notion 图解：启用后，磁盘上发生了什么](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/03-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 ```bash
@@ -106,8 +106,8 @@ mailbox 位于团队目录的 `inboxes/<agent-name>.json`。Claude Code 会校�
 
 teammate 可以引用已有 Subagent 类型。`tools`、`model` 和定义正文会应用到 teammate，团队通信和任务管理工具始终可用。`skills` 与 `mcpServers` frontmatter 不会按 Subagent 定义注入；teammate 像普通会话一样，从项目和用户设置加载 Skills 与 MCP。
 
-<!-- wos:illustration claude-code-engineering/36-agent-teams/04-timeline-lifecycle-timeline.png -->
-![Notion 图解：复用 Subagent 定义时，哪些配置会生效](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/04-timeline-lifecycle-timeline.png)
+<!-- wos:illustration claude-code-engineering/36-agent-teams/04-timeline-lifecycle-timeline.webp -->
+![Notion 图解：复用 Subagent 定义时，哪些配置会生效](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/04-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 权限也不是逐成员出生时定制。teammates 以 lead 的权限模式启动，创建后才能分别调整。若 lead 使用 `--dangerously-skip-permissions`，成员也会继承这个模式。并行执行放大了错误权限的影响范围，因此更适合预先配置精确 allowlist，而不是图省事跳过审批。
@@ -116,8 +116,8 @@ teammate 可以引用已有 Subagent 类型。`tools`、`model` 和定义正文�
 
 任务依赖可以自动解锁，但官方限制明确写着 task status 可能滞后。某个 teammate 已做完工作却没有把任务标为 completed，下游任务会继续 blocked。处理方法是检查实际产物，再手工更新任务或让 lead 提醒成员。
 
-<!-- wos:illustration claude-code-engineering/36-agent-teams/05-comparison-boundary-comparison.png -->
-![Notion 图解：共享任务不是强一致调度器](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/05-comparison-boundary-comparison.png)
+<!-- wos:illustration claude-code-engineering/36-agent-teams/05-comparison-boundary-comparison.webp -->
+![Notion 图解：共享任务不是强一致调度器](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/05-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 lead 也可能在 teammates 完成前开始自己实现，甚至提前判断团队已经结束。给 lead 的提示应包含一条具体约束：等待所有依赖任务完成，读取每个成员的结果，再开始集成。这个约束减少竞态，不能保证消除竞态。
@@ -128,8 +128,8 @@ lead 也可能在 teammates 完成前开始自己实现，甚至提前判断团�
 
 代码审查、并行研究和竞争性排障适合 Team，因为 Agent 之间交换证据本身有价值。比如两个 teammate 分别验证「缓存失效」和「事务隔离」两种故障假设，再互相挑战结论。
 
-<!-- wos:illustration claude-code-engineering/36-agent-teams/06-infographic-verification-guardrails.png -->
-![Notion 图解：何时选 Team，何时退回 Subagent](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/06-infographic-verification-guardrails.png)
+<!-- wos:illustration claude-code-engineering/36-agent-teams/06-infographic-verification-guardrails.webp -->
+![Notion 图解：何时选 Team，何时退回 Subagent](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/36-agent-teams/06-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 日志搜索、单模块审查、生成测试清单更适合 Subagent。主会话只需要结果，不需要 workers 讨论。顺序依赖明显、多人会改同一文件、每一步都要用户确认的任务，单会话通常更稳。

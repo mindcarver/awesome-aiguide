@@ -1,6 +1,6 @@
 ---
 id: 36-19
-output: ../36-19-rejected-designs.png
+output: ../36-19-rejected-designs.webp
 aspect: 16:9
 style: notion
 watermark: false

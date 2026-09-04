@@ -6,8 +6,8 @@
 
 Codex 安全不是一个“安全模式”开关，而是多层边界的组合：项目范围决定代理能看见和改写什么，沙箱提供操作系统级限制，审批策略决定谁能授权越界动作，网络策略控制外联，凭据策略减少秘密暴露，托管配置锁定组织底线。任何一层放宽，都不应默认由另一层兜底。
 
-<!-- wos:illustration codex-engineering/49-codex-security/01-framework-system-framework.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/01-framework-system-framework.png)
+<!-- wos:illustration codex-engineering/49-codex-security/01-framework-system-framework.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/01-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 ## 这篇文章适合谁
@@ -18,8 +18,8 @@ Codex 安全不是一个“安全模式”开关，而是多层边界的组合�
 
 Codex 同时处理用户指令、仓库内容、工具输出和互联网内容。风险来源至少有四类：
 
-<!-- wos:illustration codex-engineering/49-codex-security/02-comparison-boundary-comparison.png -->
-![Notion 图解：从威胁模型开始，而不是从配置项开始](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/02-comparison-boundary-comparison.png)
+<!-- wos:illustration codex-engineering/49-codex-security/02-comparison-boundary-comparison.webp -->
+![Notion 图解：从威胁模型开始，而不是从配置项开始](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/02-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 - 用户或代理误判，执行了范围过大的命令。
@@ -47,8 +47,8 @@ Codex 同时处理用户指令、仓库内容、工具输出和互联网内容�
 
 Codex 根据当前工作目录和可写根定义项目范围。对于版本控制仓库，默认组合通常是 `workspace-write` 与按需审批；非版本控制目录会采用更保守的只读策略。实际值可能被用户配置、仓库配置或企业托管策略覆盖，应以 `/status` 为准。
 
-<!-- wos:illustration codex-engineering/49-codex-security/03-flowchart-operating-flow.png -->
-![Notion 图解：第一层：项目边界与受保护路径](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/03-flowchart-operating-flow.png)
+<!-- wos:illustration codex-engineering/49-codex-security/03-flowchart-operating-flow.webp -->
+![Notion 图解：第一层：项目边界与受保护路径](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/03-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 即使在可写工作区中，Codex 仍保护仓库的 `.git` 元数据，以及 `.agents`、`.codex` 等控制目录。Git worktree 的 `.git` 可能是一个指向主仓库的文件，Codex 会解析实际 gitdir，而不是只保护表面路径。这个细节避免工作树获得间接改写仓库控制数据的能力。
@@ -72,8 +72,8 @@ codex --sandbox read-only --ask-for-approval on-request
 
 沙箱回答“进程在操作系统层面能做什么”，审批策略回答“遇到受限动作时由谁决定”。常见组合可以这样理解：
 
-<!-- wos:illustration codex-engineering/49-codex-security/04-infographic-verification-guardrails.png -->
-![Notion 图解：第二层：沙箱与审批必须分开理解](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/04-infographic-verification-guardrails.png)
+<!-- wos:illustration codex-engineering/49-codex-security/04-infographic-verification-guardrails.webp -->
+![Notion 图解：第二层：沙箱与审批必须分开理解](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/04-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 | 沙箱模式 | 当前能力 | 合适场景 | 主要风险 |
@@ -112,8 +112,8 @@ macOS 使用 Seatbelt。Linux 使用 bubblewrap 与 seccomp，若用户命名空
 
 `sandbox_workspace_write.network_access` 控制沙箱命令能否直接访问网络。`web_search` 控制 Codex 的网页检索模式，两者不是同一个开关。把 `web_search` 设为 `cached` 可以减少直接访问任意网页的暴露面，但搜索结果仍是不可信输入。
 
-<!-- wos:illustration codex-engineering/49-codex-security/05-infographic-concept-map.png -->
-![Notion 图解：第三层：网络出口和网页检索是两个控制面](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/05-infographic-concept-map.png)
+<!-- wos:illustration codex-engineering/49-codex-security/05-infographic-concept-map.webp -->
+![Notion 图解：第三层：网络出口和网页检索是两个控制面](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/05-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 需要联网安装依赖时，可以通过实验性的网络代理限制域名。该功能截至资料基线默认关闭，配置应先在目标客户端版本上验证：
@@ -141,8 +141,8 @@ enabled = true
 
 本地开发中，最稳妥的原则是不给任务不需要的秘密。不要把 token 写进提示、仓库文件或通用 shell 初始化脚本。MCP OAuth 凭据可以配置为系统 keyring 存储：
 
-<!-- wos:illustration codex-engineering/49-codex-security/06-timeline-lifecycle-timeline.png -->
-![Notion 图解：第四层：凭据不要进入代理可见上下文](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/06-timeline-lifecycle-timeline.png)
+<!-- wos:illustration codex-engineering/49-codex-security/06-timeline-lifecycle-timeline.webp -->
+![Notion 图解：第四层：凭据不要进入代理可见上下文](../../../assets/ai-coding-engineering-illustrations/codex-engineering/49-codex-security/06-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 ```toml

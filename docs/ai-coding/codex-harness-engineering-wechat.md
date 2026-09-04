@@ -4,7 +4,7 @@
 >
 > 这不是一篇“Codex 功能大全”。我想讲的是：当 AI 已经能读仓库、改文件、跑命令、操作浏览器、调工具，团队到底要怎样设计环境，才能让它持续交付可验证、可维护、可恢复的结果。
 
-![Codex Harness Engineering 全景封面](../../assets/codex-harness-engineering/01-cover.png)
+![Codex Harness Engineering 全景封面](../../assets/codex-harness-engineering/01-cover.webp)
 
 前两天，我读到腾讯技术工程发布的《驾驭 AI Coding：一份面向团队的 Harness Engineering 落地规范》。文章写得很完整，使用的主角是 CodeBuddy。
 
@@ -20,7 +20,7 @@
 
 普通网页抓取打不开微信公众号链接。Codex 没有假装自己读过，也没有拿搜索摘要凑内容，而是换成页面源码读取，定位正文节点，统计出原文约有 **25,087 个非空字符、17 张主体内容图**。随后它把自己的验收线提高到 **至少 26,000 个非空字符、至少 24 张主体图或截图**。
 
-![Codex 读取任务并建立字数与图片基线](../../assets/codex-harness-engineering/02-source-baseline.png)
+![Codex 读取任务并建立字数与图片基线](../../assets/codex-harness-engineering/02-source-baseline.webp)
 
 这个小插曲，恰好把 Harness 的价值讲明白了。
 
@@ -35,7 +35,7 @@
 - 评估与观测：怎样证明“完成了”，而不是听它说完成了；
 - 约束与恢复：什么能自动做，什么必须停下来，失败后如何回滚或换路。
 
-![六根支柱组成 Codex Harness](../../assets/codex-harness-engineering/03-six-pillars.png)
+![六根支柱组成 Codex Harness](../../assets/codex-harness-engineering/03-six-pillars.webp)
 
 这篇文章分三部分。
 
@@ -69,7 +69,7 @@ Harness：上下文、工具、编排、状态、评估、权限、恢复
 模型层：理解意图、推理、生成、决策
 ```
 
-![模型、Agent 与 Harness 三层关系](../../assets/codex-harness-engineering/04-model-agent-harness.png)
+![模型、Agent 与 Harness 三层关系](../../assets/codex-harness-engineering/04-model-agent-harness.webp)
 
 OpenAI 在 2026 年 2 月公开的 Harness Engineering 实验很有代表性：一个小团队用 Codex 在五个月内构建了约百万行代码、合并约 1,500 个 PR，并估计只用了手写方式约十分之一的时间。真正值得注意的不是行数，而是他们后来总结出的工作变化：**人类负责指引，Agent 负责执行。**
 
@@ -115,7 +115,7 @@ AI 很容易说“已经修复”“测试通过”“页面正常”。如果 H
 
 人一天写一百行坏代码，团队还有机会在 Review 时拦住。Agent 一天能改几十个文件，同一种坏模式可以在几分钟内复制到整个仓库。AI 不会消灭技术债，它会同时加快创造技术债和清理技术债的速度。
 
-![无 Harness 的项目从快到乱](../../assets/codex-harness-engineering/05-vibe-coding-decay.png)
+![无 Harness 的项目从快到乱](../../assets/codex-harness-engineering/05-vibe-coding-decay.webp)
 
 所以我现在判断一个团队有没有真正用好 Codex，不看“生成了多少代码”，而看四件事：
 
@@ -146,7 +146,7 @@ docs/
 └── references/           # 外部库与内部系统参考
 ```
 
-![AGENTS.md 只做地图，详细知识按需展开](../../assets/codex-harness-engineering/06-progressive-context.png)
+![AGENTS.md 只做地图，详细知识按需展开](../../assets/codex-harness-engineering/06-progressive-context.webp)
 
 第二根是**工具系统**。
 
@@ -185,7 +185,7 @@ Codex 需要看到命令输出、测试报告、浏览器状态、截图、日�
 
 很多团队把权限理解成“安全部门要求”。我更愿意把它理解成速度基础设施。边界越清楚，低风险动作越能自动化；边界越模糊，每一步都得人盯着。
 
-![六根支柱到 Codex 控制面的映射](../../assets/codex-harness-engineering/07-pillars-to-controls.png)
+![六根支柱到 Codex 控制面的映射](../../assets/codex-harness-engineering/07-pillars-to-controls.webp)
 
 ## 二、一套真正能跑起来的 Codex 一体化架构
 
@@ -215,7 +215,7 @@ Codex 需要看到命令输出、测试报告、浏览器状态、截图、日�
 把新知识写回系统
 ```
 
-![Codex 从需求到知识回写的完整闭环](../../assets/codex-harness-engineering/08-end-to-end-loop.png)
+![Codex 从需求到知识回写的完整闭环](../../assets/codex-harness-engineering/08-end-to-end-loop.webp)
 
 这条链路里，每一环都要回答三个问题：输入是什么，产出是什么，怎样判断合格。
 
@@ -259,7 +259,7 @@ Codex 需要看到命令输出、测试报告、浏览器状态、截图、日�
 
 敏感信息既不进入 Prompt，也不进入仓库。Codex 只应该拿到完成任务所需的最小权限，凭据通过环境或受控工具注入。
 
-![仓库、外部事实源与敏感信息的边界](../../assets/codex-harness-engineering/09-source-of-truth.png)
+![仓库、外部事实源与敏感信息的边界](../../assets/codex-harness-engineering/09-source-of-truth.webp)
 
 ### 2.3 “人类在环”不是每一步都手点确认
 
@@ -280,7 +280,7 @@ Codex 需要看到命令输出、测试报告、浏览器状态、截图、日�
 | L2 外部可逆 | 创建草稿 PR、写评论草稿、建预览 | 明确授权后执行 |
 | L3 高影响 | 生产发布、删除数据、改权限、发送外部消息 | 精确确认目标与影响 |
 
-![四级权限与人工介入点](../../assets/codex-harness-engineering/10-permission-layers.png)
+![四级权限与人工介入点](../../assets/codex-harness-engineering/10-permission-layers.webp)
 
 这套分级的目的不是保守，而是让低风险工作跑得更快，让人的注意力留给真正贵的判断。
 
@@ -322,7 +322,7 @@ Codex 需要看到命令输出、测试报告、浏览器状态、截图、日�
 
 但自治不是“取消人”。它是把人的判断写成可复用的规则、测试、工具和升级条件。
 
-![三阶段成熟度路线](../../assets/codex-harness-engineering/11-three-stage-roadmap.png)
+![三阶段成熟度路线](../../assets/codex-harness-engineering/11-three-stage-roadmap.webp)
 
 ## 四、第一阶段：一小时建立最小 Harness
 
@@ -330,7 +330,7 @@ Codex 需要看到命令输出、测试报告、浏览器状态、截图、日�
 
 这次任务所在的 `91ai` 仓库已经有 `AGENTS.md`。Codex 开工前必须读取它，其中最关键的不是愿景，而是可执行约束：文档放在哪里、图片怎样命名、修改后必须运行哪个检查、不得伪造数据、路径使用什么格式。
 
-![91ai 仓库中的 AGENTS.md 入口规则](../../assets/codex-harness-engineering/12-agents-md.png)
+![91ai 仓库中的 AGENTS.md 入口规则](../../assets/codex-harness-engineering/12-agents-md.webp)
 
 一个最小版本可以这样写：
 
@@ -383,7 +383,7 @@ This repository contains the product and its engineering documentation.
 
 这比在 `AGENTS.md` 里写“注意标题层级、空行、内部链接和 badge 数量”强得多。文字会被忽略，脚本会给出退出码。
 
-![统一检查命令将规范变成机器反馈](../../assets/codex-harness-engineering/13-check-command.png)
+![统一检查命令将规范变成机器反馈](../../assets/codex-harness-engineering/13-check-command.webp)
 
 一个好的检查入口需要满足：本地能跑，CI 也能跑；成功返回 0，失败返回非 0；输出指出具体文件与原因；默认检查足够快，完整外链检查可以单独运行。
 
@@ -404,7 +404,7 @@ This repository contains the product and its engineering documentation.
 证据：命令输出、生成文件路径、来源链接、失败项说明。
 ```
 
-![从模糊需求到可执行任务契约](../../assets/codex-harness-engineering/14-task-contract.png)
+![从模糊需求到可执行任务契约](../../assets/codex-harness-engineering/14-task-contract.webp)
 
 这种写法看起来比一句 Prompt 慢，但它会显著减少返工。最贵的不是多写一百字需求，而是让 Agent 高速跑向错误方向之后再整片推倒。
 
@@ -434,7 +434,7 @@ MCP 很容易让人上头。看到一个 Server 就想装，最后配置里塞�
 | 替代方案 | CLI、生成文件、API 是否更简单？ |
 | 验证 | 怎样证明工具返回的是当前真实数据？ |
 
-![MCP 接入前的七问决策卡](../../assets/codex-harness-engineering/15-mcp-decision.png)
+![MCP 接入前的七问决策卡](../../assets/codex-harness-engineering/15-mcp-decision.webp)
 
 一个常见错误是让查询工具直接拥有写权限。例如，团队只是想让 Codex 看数据库字段，却给了能更新业务数据的账号。正确做法是把读取和写入拆成不同工具、不同凭据，写操作再附加精确审批。
 
@@ -446,7 +446,7 @@ MCP 很容易让人上头。看到一个 Server 就想装，最后配置里塞�
 
 我确认“第一人称、微信公众号”之后，流程才继续。随后它又读取公众号风格参考：从场景开头、短段落、故事节奏、避免新闻通稿腔、结尾互动等规则，决定文章形态。
 
-![Codex 按 Skill 先确认人称与平台](../../assets/codex-harness-engineering/16-skill-trigger.png)
+![Codex 按 Skill 先确认人称与平台](../../assets/codex-harness-engineering/16-skill-trigger.webp)
 
 这就是 Skill 和普通 Prompt 的区别。
 
@@ -527,7 +527,7 @@ Skill 管一类可复用任务的执行方法，例如发布检查、事故复�
 证据：全页截图、筛选结果截图、控制台摘要、网络失败请求列表
 ```
 
-![从代码验证到真实用户路径验证](../../assets/codex-harness-engineering/17-browser-verification.png)
+![从代码验证到真实用户路径验证](../../assets/codex-harness-engineering/17-browser-verification.webp)
 
 截图不是为了让报告显得丰富，而是为了记录状态变化。最有价值的通常是成对证据：修复前与修复后、桌面与移动端、正常态与异常态、浅色与深色。
 
@@ -550,7 +550,7 @@ Agent C：只读审查安全边界，不修改代码，输出按严重度排序�
 禁止：不得回退其他 Agent 的改动；发现接口冲突先报告，不自行改约定。
 ```
 
-![多 Agent 的责任区与共享契约](../../assets/codex-harness-engineering/18-multi-agent-contract.png)
+![多 Agent 的责任区与共享契约](../../assets/codex-harness-engineering/18-multi-agent-contract.webp)
 
 并行之后必须有汇合点。主 Agent 负责检查接口是否一致、是否有遗漏、测试是否覆盖整条链路。把任务分出去不等于把责任分出去。
 
@@ -592,7 +592,7 @@ Agent C：只读审查安全边界，不修改代码，输出按严重度排序�
 
 数据库迁移的证据是前进和回滚都成功，并检查目标 Schema；接口的证据是正常、未授权、非法参数和空结果测试；页面的证据是用户路径截图、控制台和网络请求；文档的证据是 lint 与链接检查。
 
-![每个计划步骤都连接一个证据接口](../../assets/codex-harness-engineering/19-evidence-per-step.png)
+![每个计划步骤都连接一个证据接口](../../assets/codex-harness-engineering/19-evidence-per-step.webp)
 
 当证据接口明确，Codex 才能独立循环。如果只写“完成后让我看看”，每完成一点都得人接管，Agent 的自治自然上不去。
 
@@ -656,7 +656,7 @@ Bug 修复最重要的不是尽快改代码，而是先证明自己理解了问�
 → 做最小修复 → 运行目标测试 → 运行回归检查 → 重走真实路径
 ```
 
-![Bug 修复从复现到回归的闭环](../../assets/codex-harness-engineering/20-bug-fix-loop.png)
+![Bug 修复从复现到回归的闭环](../../assets/codex-harness-engineering/20-bug-fix-loop.webp)
 
 这里有三条红线。
 
@@ -696,7 +696,7 @@ AI Review 最适合做系统性、重复性检查，但不能只给一句“帮�
 - 官方产品事实：优先引用 OpenAI 官方页面，并写明核对日期；
 - 第一人称经历：只写本次任务和我真实使用过的流程，不把别人的案例冒充自己的项目。
 
-![内容重写也需要来源、执行与验收闭环](../../assets/codex-harness-engineering/21-content-workflow.png)
+![内容重写也需要来源、执行与验收闭环](../../assets/codex-harness-engineering/21-content-workflow.webp)
 
 这套流程看起来比直接“洗稿”慢，但它保护了最重要的东西：可信度。
 
@@ -722,7 +722,7 @@ AI Review 最适合做系统性、重复性检查，但不能只给一句“帮�
 
 第十，**不隐瞒未验证项。** 完成报告必须区分已验证、推断和未能验证。
 
-![团队协作红线与安全边界](../../assets/codex-harness-engineering/22-team-red-lines.png)
+![团队协作红线与安全边界](../../assets/codex-harness-engineering/22-team-red-lines.webp)
 
 ## 九、常见反模式：看起来在用 Agent，其实还在手工作坊
 
@@ -783,7 +783,7 @@ assets/codex-harness-engineering/
 
 这点很重要。在共享工作区里，“先让状态变干净”可能意味着删除别人的工作。最安全的不是追求漂亮的 `git status`，而是知道哪些变化属于谁。
 
-![Codex 识别脏工作区并采用全新文件范围](../../assets/codex-harness-engineering/23-dirty-worktree-scope.png)
+![Codex 识别脏工作区并采用全新文件范围](../../assets/codex-harness-engineering/23-dirty-worktree-scope.webp)
 
 ### 10.2 七个审计维度
 
@@ -857,7 +857,7 @@ Skill 要求先确认人称和平台。用户回复“是”以后才进入写�
 - 发布前再次核对官方链接与日期
 ```
 
-![Harness 审计从分数回到证据与行动](../../assets/codex-harness-engineering/24-audit-report.png)
+![Harness 审计从分数回到证据与行动](../../assets/codex-harness-engineering/24-audit-report.webp)
 
 ### 10.6 推荐的审计节奏
 
@@ -895,7 +895,7 @@ Harness 的转变，是把这些重复提醒逐步移出人的脑子。
 
 “失败怎么办”变成回滚手册和升级条件。
 
-![人的重复提醒逐步沉淀进 Harness](../../assets/codex-harness-engineering/25-human-judgment-compounds.png)
+![人的重复提醒逐步沉淀进 Harness](../../assets/codex-harness-engineering/25-human-judgment-compounds.webp)
 
 当这些东西积累起来，人不再需要盯住每个动作，而是设计目标、边界和反馈回路。Codex 也不再只是一个代码生成器，而是一个能在工程系统里工作的执行者。
 
@@ -959,7 +959,7 @@ Harness 的转变，是把这些重复提醒逐步移出人的脑子。
 
 第 4 周验收：不同成员用不同表达提出同类任务，Codex 都能进入同一流程，并给出相同结构的证据。
 
-![Codex Harness 30 天落地日历](../../assets/codex-harness-engineering/26-thirty-day-plan.png)
+![Codex Harness 30 天落地日历](../../assets/codex-harness-engineering/26-thirty-day-plan.webp)
 
 ## 十三、可以直接复制的团队检查清单
 

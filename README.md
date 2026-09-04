@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/awesome-ai-guide-cover.png" alt="91ai cover" width="100%" />
+  <img src="./assets/awesome-ai-guide-cover.webp" alt="91ai cover" width="100%" />
 </p>
 
 <h1 align="center">91ai：面向开发者的中文 AI 工程知识库</h1>

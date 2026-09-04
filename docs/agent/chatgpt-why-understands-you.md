@@ -16,7 +16,7 @@
 
 ## 先把「懂」拆开，不然讨论会一直跑偏
 
-![ChatGPT 回答由当前对话、自定义指令、长期记忆和意图边界共同塑造](../../assets/chatgpt-why-understands-you/01-framework-four-layers.png)
+![ChatGPT 回答由当前对话、自定义指令、长期记忆和意图边界共同塑造](../../assets/chatgpt-why-understands-you/01-framework-four-layers.webp)
 
 日常语言里的「懂」，至少混了四种不同能力。
 
@@ -34,7 +34,7 @@
 
 ## 一次回答前，模型收到的并不只有你最后那句话
 
-![一次回答前的上下文装配流程](../../assets/chatgpt-why-understands-you/02-flowchart-context-assembly.png)
+![一次回答前的上下文装配流程](../../assets/chatgpt-why-understands-you/02-flowchart-context-assembly.webp)
 
 先看一个简化后的画面。它不是 OpenAI 的内部架构图，而是理解回答来源的工作模型：
 
@@ -70,7 +70,7 @@ ChatGPT 的「像懂你」首先就是这种共同上下文带来的省略能力
 
 ## 它怎么在一长串文字里抓住「这个」到底指什么
 
-![注意力通过关联强度选择相关上下文](../../assets/chatgpt-why-understands-you/03-framework-attention-links.png)
+![注意力通过关联强度选择相关上下文](../../assets/chatgpt-why-understands-you/03-framework-attention-links.webp)
 
 这里要碰到一个技术词：Transformer 的注意力机制。不要急着把它想成机器人在「注意」某件事。它更像一种计算方法，让模型在生成下一个词时，根据当前任务给前面不同位置的文字分配不同权重。
 
@@ -104,7 +104,7 @@ ChatGPT 的「像懂你」首先就是这种共同上下文带来的省略能力
 
 ## 长期记忆不是聊天记录，也不是一个永远正确的档案库
 
-![当前对话、保存记忆与历史综合的区别](../../assets/chatgpt-why-understands-you/04-comparison-memory-forms.png)
+![当前对话、保存记忆与历史综合的区别](../../assets/chatgpt-why-understands-you/04-comparison-memory-forms.webp)
 
 跨聊天还「认识你」，是最容易让人把 ChatGPT 人格化的部分。先把三个东西分开：当前对话、保存的记忆、引用聊天历史。
 
@@ -142,7 +142,7 @@ ChatGPT 的「像懂你」首先就是这种共同上下文带来的省略能力
 
 ## 它为什么有时会说得很像，结果却完全不对
 
-![把事实、推断与待核实内容分开](../../assets/chatgpt-why-understands-you/07-framework-evidence-boundary.png)
+![把事实、推断与待核实内容分开](../../assets/chatgpt-why-understands-you/07-framework-evidence-boundary.webp)
 
 这是理解 ChatGPT 的分水岭。它的语言能力很强，会让错误答案也具有很高的可读性。
 
@@ -164,7 +164,7 @@ ChatGPT 的「像懂你」首先就是这种共同上下文带来的省略能力
 
 ## 它会不会把我的每句话都记住
 
-![普通对话、记忆、项目边界与临时聊天的控制范围](../../assets/chatgpt-why-understands-you/08-framework-privacy-controls.png)
+![普通对话、记忆、项目边界与临时聊天的控制范围](../../assets/chatgpt-why-understands-you/08-framework-privacy-controls.webp)
 
 不能这样假定。
 
@@ -188,7 +188,7 @@ ChatGPT 的「像懂你」首先就是这种共同上下文带来的省略能力
 
 ## 为什么记忆不是多存一点就更好：取回什么，比存下什么更难
 
-![记忆从筛选到取回、更新与删除的生命周期](../../assets/chatgpt-why-understands-you/05-flowchart-memory-lifecycle.png)
+![记忆从筛选到取回、更新与删除的生命周期](../../assets/chatgpt-why-understands-you/05-flowchart-memory-lifecycle.webp)
 
 很多人第一次设计长期记忆，都会做一个朴素方案：把用户每句话都存库里，下一次按相似度检索几条，再塞回提示词。它能跑，也能做出一些令人惊喜的演示，但很快会遇到真正麻烦的部分。
 
@@ -221,7 +221,7 @@ ChatGPT 的「像懂你」首先就是这种共同上下文带来的省略能力
 
 ## 一个长对话是怎样慢慢失控的
 
-![上下文漂移与状态重置的对比](../../assets/chatgpt-why-understands-you/06-comparison-context-drift.png)
+![上下文漂移与状态重置的对比](../../assets/chatgpt-why-understands-you/06-comparison-context-drift.webp)
 
 假设你用同一个窗口连续两周做内容策划。第一天，你让 ChatGPT 帮你分析一个面向开发者的产品。第三天，你让它写一篇面向老板的预算说明。第五天，你贴进一份客户反馈。第八天，你让它帮忙想一个公众号标题。第十二天，你问：「按之前的风格重写这一段。」
 
@@ -243,7 +243,7 @@ ChatGPT 的「像懂你」首先就是这种共同上下文带来的省略能力
 
 ## 看一个完整场景：同一句「帮我写一下」，为什么会得到完全不同的结果
 
-![同一句请求在不同上下文与工具条件下得到不同回答](../../assets/chatgpt-why-understands-you/09-timeline-working-day.png)
+![同一句请求在不同上下文与工具条件下得到不同回答](../../assets/chatgpt-why-understands-you/09-timeline-working-day.webp)
 
 把前面的概念放进一个普通工作日，比较容易看出「懂你」到底在哪儿发生。
 
@@ -275,7 +275,7 @@ ChatGPT 的「像懂你」首先就是这种共同上下文带来的省略能力
 
 ## 想让它更懂你，可以这样写上下文
 
-![让 AI 做对任务所需的六项任务说明](../../assets/chatgpt-why-understands-you/10-infographic-task-contract.png)
+![让 AI 做对任务所需的六项任务说明](../../assets/chatgpt-why-understands-you/10-infographic-task-contract.webp)
 
 很多提示词技巧把重点放在神秘模板上。更有效的做法其实很朴素：把会改变答案的事实放到模型能可靠看到的位置。
 

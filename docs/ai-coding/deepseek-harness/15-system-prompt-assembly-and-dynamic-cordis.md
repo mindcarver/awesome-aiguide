@@ -3,7 +3,7 @@
 > dsh 的系统提示不是一份写死的文本，而是每个 step 现场组装的投影：插件往 ctx.systemPrompt 注册表贡献段落、动态上下文、工具 schema 和变量，按约定的 order 排序，过一道协作 waterfall，再插值渲染。工具列表和提示文本出自同一次组装，所以改插件树就是改模型下一个 step 看到的世界。
 > 动态 Cordis 把这条管线对 agent 自己敞开：模型用五个 cordis_* 工具往活运行时挂载自己写的包，注册新工具、新提示、新监听器；这些注册全是可逆副作用，停掉就按序撤销。这套能力的信任等级等同 bash。
 
-![系统提示与工具 schema 从注册表现场组装到模型请求](imgs/15-01-flowchart-prompt-assembly.png)
+![系统提示与工具 schema 从注册表现场组装到模型请求](imgs/15-01-flowchart-prompt-assembly.webp)
 
 ## 提示是投影，不是文件
 
@@ -11,13 +11,13 @@
 
 dsh 的做法是把提示变成注册表服务 ctx.systemPrompt 的投影，配一条所有权规则：**谁拥有一个事实，谁注册承载这个事实的贡献。**贡献有四种：段落是系统提示里的一段文本；上下文是动态模型上下文；工具是 schema 提供者；变量给段落文本里的占位符供值。
 
-![四种贡献围绕 ctx.systemPrompt 注册表组装提示](imgs/15-02-framework-four-contributions.png)
+![四种贡献围绕 ctx.systemPrompt 注册表组装提示](imgs/15-02-framework-four-contributions.webp)
 
 段落和上下文带 order 数字，order 是约定出来的档位，不是注册顺序：-100 是 harness 身份，0 是部署人格，100 到 199 是工具引导。告诉模型 dsh 源码检出在哪的段落 order 是 -99，紧跟身份之后、人格之前；Code Mode 部署里"只有 run_code 可以直接调"的规则 order 是 99，在人格之后、工具引导之前。顺序固定，插件先加载还是后加载不影响提示长什么样。
 
 注册还分两层：全局层对所有 agent 生效，单个 agent 的 scope 层可以按同名覆盖全局。给某个子 agent 换人格、换工具集，不动全局，在它那层盖掉。
 
-![全局注册表可被单个 agent 的 scope 同名覆盖](imgs/15-03-comparison-global-scope.png)
+![全局注册表可被单个 agent 的 scope 同名覆盖](imgs/15-03-comparison-global-scope.webp)
 
 ## 跟着一个 step 组装一次
 
@@ -33,13 +33,13 @@ agent 循环在每个 step 发起模型请求前，对着当前 scope 做一次�
 请求 = system 文本 + 本次组装的工具 schema + 会话日志投影出的 messages
 ```
 
-![一个 step 从贡献合并、排序、waterfall 到请求的完整组装](imgs/15-04-flowchart-step-assembly.png)
+![一个 step 从贡献合并、排序、waterfall 到请求的完整组装](imgs/15-04-flowchart-step-assembly.webp)
 
 waterfall 是一条协作改写链：监听器逐个拿到可变的组装结果，改完交给下一个，链尾的值生效。要统一过滤或统一改写的部署在这里动手。唯一的例外是 complete 段：一个声明 complete: true 的段在 waterfall 之后被恢复成全部提示，监听器加不进也换不掉；多于一个有效 complete 段，组装直接失败。想完全接管提示的部署有这个口子，同时工具、上下文、变量仍被正常解析。
 
 上下文贡献的去向和另外三种不同。它不进 system 前缀，而是渲染成一条 user 角色的快照落进会话日志，并且只在内容变化（或压缩把上一条挤掉）时才落新的一条，清空时落一条明确的"当前无运行时上下文"。这个设计把会变的事实从 system 前缀挪进了消息历史：变化对模型是追加，不是前缀改写。
 
-![动态上下文以 user 快照追加到会话日志而非 system 前缀](imgs/15-05-comparison-context-snapshot.png)
+![动态上下文以 user 快照追加到会话日志而非 system 前缀](imgs/15-05-comparison-context-snapshot.webp)
 
 工具 schema 是组装的一部分，这解释了一个日常现象：注册一个工具，它的 schema 自动出现在模型的工具列表里。工具运行时把自己注册成了系统提示的一个工具 schema 提供者，注册工具和注册提示段走同一条管线。"模型被告知能做什么"被当成一件事处理，尽管传输时 schema 是请求里一个独立字段。
 
@@ -47,7 +47,7 @@ waterfall 是一条协作改写链：监听器逐个拿到可变的组装结果�
 
 ## 每步重拼，前缀稳定
 
-![相同请求前缀复用 KV cache，变化从第一个 token 起失效](imgs/15-06-comparison-prefix-cache.png)
+![相同请求前缀复用 KV cache，变化从第一个 token 起失效](imgs/15-06-comparison-prefix-cache.webp)
 
 每步重组装听上去费钱，设计的目标是不变不付代价：只要 system 文本、工具 schema、更早的历史字节不变，请求前缀就能被 provider 的 KV cache 复用；任何一处变了，复用从第一个改动的 token 起失效。
 
@@ -59,17 +59,17 @@ waterfall 是一条协作改写链：监听器逐个拿到可变的组装结果�
 
 五个动词两两配对，加一个只读报告。cordis_inspect 给当前进程的报告：服务、活着的插件、已注册工具、本会话的动态包、每个服务的可调方法和事件签名。cordis_define 记录一个包定义（名字、用途、host 半边代码和可选的浏览器半边），两边都做语法检查，什么都不跑；用户在会话里看到一张带启动控件的卡片，定义拿到一个 dyn- 开头的 id。cordis_run 跑起来。cordis_stop 停到静止，定义保留。cordis_undefine 先停再忘，卡片留在会话里作为卸载记录。
 
-![cordis 的 inspect、define、run、stop 与 undefine 生命周期](imgs/15-07-flowchart-cordis-tools.png)
+![cordis 的 inspect、define、run、stop 与 undefine 生命周期](imgs/15-07-flowchart-cordis-tools.webp)
 
 run 有两种形状，差别在包由谁执行。只有 host 半边的包是本进程自己的事：代码进 vm 沙箱求值，产出的插件挂成一个子 fiber（一次插件装载的生命周期单位，下一节展开），调用返回。带浏览器半边的包必须由一个网页来执行：run 变成一次可应答的往返，发出请求后挂起，由人在某个打开的页面上允许或拒绝；没有定时器，发起这一轮的取消信号是唯一另一个出口，无头部署里这样的 run 会一直挂到本轮取消。
 
-![host 侧 vm 执行与浏览器侧页面批准的两种 cordis run](imgs/15-08-comparison-host-browser-run.png)
+![host 侧 vm 执行与浏览器侧页面批准的两种 cordis run](imgs/15-08-comparison-host-browser-run.webp)
 
 跑起来的包能做什么？它拿到的不是完整的框架上下文，而是一个白名单门面：可以注册工具、监听器、服务，读一个服务必须先声明依赖，框架内部的装载与卸载机构全部不可见。它能加，不能拆：已装载的插件、已写的配置动不了。注册的工具 schema 在注册时就过边界校验，畸形 schema 带着教学性的错误当场被拒，而不是等下一个 step 组装时爆掉。
 
 自指就发生在这里：跑起来的包注册的新工具，下一个 step 的组装立刻看得见，模型自己的工具列表变了，改的对象正是正在跑它自己的那棵插件树。边界也明确：动态包只活在进程内存里，跨 turn 保持活跃，可能影响同进程的其他会话，但不创建文件、不改配置、不活过重启，也没有自动转正的通道；要保留一个实验，得走常规开发流程实现正式插件。行为动词都校验会话所有权，别的会话定义的包读作不存在。
 
-![agent 运行动态包后在下一 step 看到新的工具列表](imgs/15-09-flowchart-self-referential.png)
+![agent 运行动态包后在下一 step 看到新的工具列表](imgs/15-09-flowchart-self-referential.webp)
 
 ## 撤销是结构保证
 
@@ -77,7 +77,7 @@ run 有两种形状，差别在包由谁执行。只有 host 半边的包是本�
 
 动态包正是挂在 fiber 下跑的，所以 cordis_stop 做的事就是等待这个 fiber 卸载到静止：它注册的一切按序撤销，活运行时回到原状。工具集卸载、进程重启走同一条卸载路径。多个动态包之间还能用服务语义组合：A 提供一个服务，B 声明依赖，A 在则 B 激活，A 停则 B 回到待定、注册随之撤销，A 再跑 B 重新激活。挂载是实验，卸载是常态，这套语义让试错不用付出越试越脏的代价。
 
-![fiber 记录可逆副作用，cordis stop 按序撤销到静止](imgs/15-10-framework-reversible-fiber.png)
+![fiber 记录可逆副作用，cordis stop 按序撤销到静止](imgs/15-10-framework-reversible-fiber.webp)
 
 ## 权衡
 

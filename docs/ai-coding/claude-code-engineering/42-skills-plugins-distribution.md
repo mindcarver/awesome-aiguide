@@ -6,8 +6,8 @@
 
 Skill 是按需加载的任务知识单元，Plugin 是可版本化分发的能力包，Marketplace 只是插件目录。把 Marketplace 加进 Claude Code 不会安装其中的插件，把插件写进项目设置也不代表外部代码会在同事机器上静默执行。
 
-<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/01-infographic-verification-guardrails.png -->
-![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/01-infographic-verification-guardrails.png)
+<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/01-infographic-verification-guardrails.webp -->
+![Notion 图解：TL;DR](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/01-infographic-verification-guardrails.webp)
 <!-- /wos:illustration -->
 
 单仓库约定优先使用 `.claude/skills/`。需要跨仓库发布 Skills、agents、hooks、MCP 或 LSP 时再打成 Plugin。团队分发必须同时设计来源、版本、安装同意、权限和更新策略。
@@ -20,8 +20,8 @@ Skill 是按需加载的任务知识单元，Plugin 是可版本化分发的能�
 
 ### Skill：按任务加载的上下文
 
-<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/02-infographic-concept-map.png -->
-![Notion 图解：先把三个名词归位](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/02-infographic-concept-map.png)
+<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/02-infographic-concept-map.webp -->
+![Notion 图解：先把三个名词归位](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/02-infographic-concept-map.webp)
 <!-- /wos:illustration -->
 
 一个 Skill 至少包含 `SKILL.md`。Claude 先看到名称和描述，匹配到任务或用户显式调用时才加载正文。它与 `CLAUDE.md` 的差别很直接：`CLAUDE.md` 通常进入启动上下文，Skill 正文只在使用时进入，并在加载后继续占用该会话的上下文。
@@ -57,8 +57,8 @@ Plugin 中的 Skill 会带命名空间，例如 `/release-tools:verify`，用于
 
 Plugin 可以同时携带 Skills、agents、hooks、MCP、LSP 和命令。选择它的理由应是“需要跨项目、可安装、可升级地分发多个组件”，而不是目录看起来更正式。
 
-<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/03-framework-system-framework.png -->
-![Notion 图解：Plugin：一个可执行能力包](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/03-framework-system-framework.png)
+<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/03-framework-system-framework.webp -->
+![Notion 图解：Plugin：一个可执行能力包](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/03-framework-system-framework.webp)
 <!-- /wos:illustration -->
 
 先在插件根目录验证结构：
@@ -97,8 +97,8 @@ claude plugin install github@claude-plugins-official --scope project
 
 Plugin 与 Marketplace 都可能让代码以当前用户身份运行。hooks 能在生命周期节点执行命令，MCP 能连接外部服务，LSP 能启动进程。审核重点至少包括：
 
-<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/04-flowchart-operating-flow.png -->
-![Notion 图解：信任边界要落到配置和流程](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/04-flowchart-operating-flow.png)
+<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/04-flowchart-operating-flow.webp -->
+![Notion 图解：信任边界要落到配置和流程](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/04-flowchart-operating-flow.webp)
 <!-- /wos:illustration -->
 
 - 来源是否由组织控制，Git 仓库是否固定到完整 40 位提交 SHA。
@@ -115,8 +115,8 @@ Plugin 与 Marketplace 都可能让代码以当前用户身份运行。hooks 能
 
 官方 Marketplace 默认自动更新，第三方和本地 Marketplace 默认不自动更新。更新通常在启动后发生，并可能随机延迟最多 10 分钟；已经加载的会话继续使用旧版本，直到重启或重载。
 
-<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/05-timeline-lifecycle-timeline.png -->
-![Notion 图解：更新策略中的两个坑](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/05-timeline-lifecycle-timeline.png)
+<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/05-timeline-lifecycle-timeline.webp -->
+![Notion 图解：更新策略中的两个坑](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/05-timeline-lifecycle-timeline.webp)
 <!-- /wos:illustration -->
 
 另一个坑是缓存。插件会复制到 `~/.claude/plugins/cache`，运行时不能依赖插件目录之外的相对文件。开发目录里通过 `../shared` 能读到的文件，安装后可能不存在。发布前应在干净环境从 Marketplace 安装一次，再验证所有引用。
@@ -125,8 +125,8 @@ Plugin 与 Marketplace 都可能让代码以当前用户身份运行。hooks 能
 
 Skills 的分发成本低，但它们是模型可读指令，不是确定性策略引擎。Plugin 能封装更多组件，也把供应链风险和上下文成本一起带进来。Marketplace 便于发现和治理，却不会替你完成代码审计、权限隔离与版本回滚。
 
-<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/06-comparison-boundary-comparison.png -->
-![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/06-comparison-boundary-comparison.png)
+<!-- wos:illustration claude-code-engineering/42-skills-plugins-distribution/06-comparison-boundary-comparison.webp -->
+![Notion 图解：权衡与局限](../../../assets/ai-coding-engineering-illustrations/claude-code-engineering/42-skills-plugins-distribution/06-comparison-boundary-comparison.webp)
 <!-- /wos:illustration -->
 
 更可靠的团队方案是：知识用 Skill，确定性门禁放 CI 或仓库规则，高权限动作要求显式调用，跨仓库组件用固定来源的 Plugin，组织策略只允许审过的 Marketplace。

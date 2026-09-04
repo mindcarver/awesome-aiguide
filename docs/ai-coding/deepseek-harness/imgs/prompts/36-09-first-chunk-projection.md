@@ -1,6 +1,6 @@
 ---
 id: 36-09
-output: ../36-09-first-chunk-projection.png
+output: ../36-09-first-chunk-projection.webp
 aspect: 16:9
 style: notion
 watermark: false

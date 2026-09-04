@@ -24,7 +24,7 @@ ReAct 解决“边想边做”，Plan-and-Solve 解决“先计划再执行”�
 
 Self-Discover 来自论文 *Self-Discover: Large Language Models Self-Compose Reasoning Structures*。它分三步：
 
-![Self-Discover 模式架构](images/self_discover.png)
+![Self-Discover 模式架构](images/self_discover.webp)
 
 1. Selector：从推理模块库中选择适合当前任务的模块。
 2. Adaptor：把通用模块改写成当前任务可用的步骤。
@@ -68,7 +68,7 @@ Self-Discover 的价值是防止模型用单一套路处理所有问题。它的
 
 Storm 来自 *STORM: Writing Wikipedia-like Articles From Scratch with Large Language Models*。它解决的是长文生成的一类老问题：一次性写长文容易结构松散、重复、缺引用、前后风格不一致。
 
-![Storm 模式架构](images/storm.png)
+![Storm 模式架构](images/storm.webp)
 
 Storm 的流程是：
 

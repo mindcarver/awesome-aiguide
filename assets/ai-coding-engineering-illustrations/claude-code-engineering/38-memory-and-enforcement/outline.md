@@ -16,7 +16,7 @@ image_count: 6
 
 **Type Application**: infographic (guardrail)
 
-**Filename**: 01-infographic-verification-guardrails.png
+**Filename**: 01-infographic-verification-guardrails.webp
 
 ## Illustration 2
 
@@ -28,7 +28,7 @@ image_count: 6
 
 **Type Application**: framework
 
-**Filename**: 02-framework-system-framework.png
+**Filename**: 02-framework-system-framework.webp
 
 ## Illustration 3
 
@@ -40,7 +40,7 @@ image_count: 6
 
 **Type Application**: flowchart
 
-**Filename**: 03-flowchart-operating-flow.png
+**Filename**: 03-flowchart-operating-flow.webp
 
 ## Illustration 4
 
@@ -52,7 +52,7 @@ image_count: 6
 
 **Type Application**: infographic
 
-**Filename**: 04-infographic-concept-map.png
+**Filename**: 04-infographic-concept-map.webp
 
 ## Illustration 5
 
@@ -64,7 +64,7 @@ image_count: 6
 
 **Type Application**: timeline
 
-**Filename**: 05-timeline-lifecycle-timeline.png
+**Filename**: 05-timeline-lifecycle-timeline.webp
 
 ## Illustration 6
 
@@ -76,4 +76,4 @@ image_count: 6
 
 **Type Application**: comparison
 
-**Filename**: 06-comparison-boundary-comparison.png
+**Filename**: 06-comparison-boundary-comparison.webp
