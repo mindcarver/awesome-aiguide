@@ -1,10 +1,10 @@
-# i18n 翻译配对与质量门禁：dsh 双语文档怎么不腐烂
+# dsh 的 i18n 翻译配对与质量门禁：双语文档怎么不腐烂
 
-> `dsh` 把"两份文档必须说同一件事"拆成两半：机械可查的半边交给门禁，语义对错的半边留给人。三文件配对加 blob hash 指纹让任何单边改动立刻可见，结构签名把漏译从 review 里挪进 CI，merge driver 让两个分支各自确认的配对自动合流。最重要的边界是官方文档的原话：绿色门禁意味着配对在这些确切内容下被确认一致，不意味着确认本身是合理的。后半句永远归 reviewer。
+> dsh 把"两份文档必须说同一件事"拆成两半：机械可查的半边交给门禁，语义对错的半边留给人。三文件配对加 blob hash 指纹让任何单边改动立刻可见，结构签名把漏译从 review 里挪进 CI，merge driver 让两个分支各自确认的配对自动合流。最重要的边界是官方文档的原话：绿色门禁意味着配对在这些确切内容下被确认一致，不意味着确认本身是合理的。后半句永远归 reviewer。
 
 ## 双语文档为什么会腐烂
 
-`dsh` 的文档被两类读者消费：公司内外的人，和干活中的 agent。范围内的每一份文档都维护英文和简体中文两个版本，两种语言权威相等，先写哪边都合法，一份中文先写的 Agent Note 和一份英文先写的完全平权。绑定它们的只有一条纪律：必须说同一件事。
+dsh 的文档被两类读者消费：公司内外的人，和干活中的 agent。范围内的每一份文档都维护英文和简体中文两个版本，两种语言权威相等，先写哪边都合法，一份中文先写的 Agent Note 和一份英文先写的完全平权。绑定它们的只有一条纪律：必须说同一件事。
 
 这条纪律的敌人不是疏忽，是默认动力学。翻译天然是异步的：改英文的人正在赶一个修复，翻译可以"稍后"；每个"稍后"都没有提醒机制，积累到某一天，中文版停在三个版本之前。分叉一旦发生就没有回头路：读者不知道哪个版本是对的，只能猜，或者干脆都不信。文档从资产变成负债，就是这个瞬间。
 
@@ -32,7 +32,7 @@ agent 作为读者把代价放大了一档。人会闻到陈旧味，agent 不�
 
 失效检测就是一次不等式。你改了 `foo.md` 但没重新确认配对，`foo.md` 的当前 blob hash 和记录里的不一致，门禁变红，信息精确到"哪个文件的哪一侧失步了"。没有模糊的"文档可能过期"，只有可计算的 yes 或 no。
 
-记录还带一套恢复机制。`--write` 在写入记录前，把两侧快照存进本地 Git object database（包括未提交的工作树内容），并在 `refs/dsh/translation-pairing/snapshots/` 下为每个不同的 blob 钉一个 content-addressed ref，让垃圾回收收不走它们。这意味着记录里的 hash 随时能恢复任一侧上次确认时的确切文本。一个失步的配对，修复方式是对着编辑侧的 diff 给对侧打最小补丁，而不是重新翻译整个文件：英文加了一个段落，就给中文补那一个段落的翻译；改了一个参数名，就同步那个词。修完跑 `pnpm run verify-translation-pairing --write <pair>` 重新记录两边。
+记录还带一套恢复机制。`--write` 在写入记录前，把两侧快照存进本地 Git object database（包括未提交的工作树内容），并在 `refs/dsh/translation-pairing/snapshots/` 下为每个不同的 blob 钉一个 content-addressed ref，让垃圾回收收不走它们。记录里的 hash 随时能恢复任一侧上次确认时的确切文本。一个失步的配对，修复方式是对着编辑侧的 diff 给对侧打最小补丁，而不是重新翻译整个文件：英文加了一个段落，就给中文补那一个段落的翻译；改了一个参数名，就同步那个词。修完跑 `pnpm run verify-translation-pairing --write <pair>` 重新记录两边。
 
 确认动作本身是可 review 的。`--write` 产生的 yaml diff 就是"我确认这两份内容一致"的书面记录，reviewer 在 PR 里看得见指纹变了、谁确认的。`--write` 必须点名配对，不许无差别刷；全语料重记录是 `--write --all`，留给明确的批量场景。这个约束防止有人用一条命令把整条语料的确认时间戳悄悄平移，让确认重新变成不可见的行为。
 
@@ -48,7 +48,7 @@ agent 作为读者把代价放大了一档。人会闻到陈旧味，agent 不�
 
 行内代码同样逐字：命令、flag、配置键、路径、事件和 API 名、版本号，不翻译、不重排格式。链接文本可以翻译，链接目标保持语义不变；指向语料库内部的相对链接，英文用 `.md`、中文用 `.zh.md`，中文侧指向一个不存在的对应物是配对完整性错误，不是可以回退容忍的情况。
 
-中文侧还有一层排版纪律由 `translation-rules.md` 固定，也进校验：中英文之间和中文与数字之间留半角空格（`每个 plugin 注册 3 个 tool` 这种形态），全角标点用于正文，顿号用于并列列表项，人称用"你"不用"您"，禁止全角数字和字母，强调标记落在相同的 span 上。规则里还有一条和本系列文风不谋而合：中文里倾向用冒号和句号，不用破折号。
+中文侧还有一层排版纪律由 `translation-rules.md` 固定，也进校验：中英文之间和中文与数字之间留半角空格（`每个 plugin 注册 3 个 tool` 这种形态），全角标点用于正文，顿号用于并列列表项，人称用"你"不用"您"，禁止全角数字和字母，强调标记落在相同的 span 上。
 
 ## 语言切换器：唯一被豁免的跨语言链接
 
@@ -60,11 +60,11 @@ agent 作为读者把代价放大了一档。人会闻到陈旧味，agent 不�
 
 `pnpm run verify-translation-pairing` 是 doc-sync 的一部分，本地由贡献者跑文档变更相关的部分，CI 跑穷尽的全语料版。它机械地执行三件事。
 
-第一，范围内的每个文档有完整配对。缺 `.zh.md` 或缺 `.i18n.yaml` 都是失败，大小写混写的 README 不豁免。第二，每个存在的配对 artifact 完整且一致：三个文件都在，每一侧的当前 blob hash 等于记录值，中文侧和每个 authored 英文源带正确的语言切换器，结构签名按序匹配。第三，列为 excluded 的文件干净：不许有 `.zh.md`，不许有 `.i18n.yaml`，排除状态本身也被校验。
+第一，范围内的每个文档有完整配对。缺 `.zh.md` 或缺 `.i18n.yaml` 都是失败，大小写混写的 README 不豁免。第二，每个存在的配对 artifact 完整且一致：三个文件都在，每一侧的当前 blob hash 等于记录值，中文侧和每个 authored 英文源带正确的语言切换器，每条普通相对文档链接用源文件一侧对应的目标 locale，结构签名按序匹配。第三，列为 excluded 的文件干净：不许有 `.zh.md`，不许有 `.i18n.yaml`，排除状态本身也被校验。
 
 日常用得最多的是三个变体。`--list` 打印范围内每个文档的当前状态，missing、out-of-sync、ok 三种，从不失败，适合当体检报告读。带配对名运行只检查命名的配对，一个更新循环几秒内验证自己的改动，不用重扫全语料。`--write` 重新记录确认过的配对。
 
-这里有一条容易被走捷径绕过的规矩：命名配对的 scoped green 不能替代 PR 级的全语料校验。你只验证自己改的那对，CI 在 PR 上跑的是全量；本地 scoped 检查是为迭代速度存在的，不是为豁免存在的。门禁创建的实际规则一句话能说完：一个 PR 编辑了配对文档的任一侧，同一个 PR 必须直接更新对应版本并重新记录，否则 CI 红。
+这里有一条容易被走捷径绕过的规矩：命名配对的 scoped green 不能替代 PR 级的全语料校验。你只验证自己改的那对，CI 在 PR 上跑的是全量；本地 scoped 检查是为迭代速度存在的，不是为豁免存在的。门禁创建的实际规则一句话能说完：一个 PR 编辑了配对文档的任一侧，同一个 PR 必须在术语指导下直接一次完成对侧更新并重新记录，否则 CI 红。
 
 ## 一次失步的一生
 
@@ -106,7 +106,7 @@ fail-closed 落在好几层。运行时缺失（没装 Node 或 tsx），launche
 
 `lefthook.yml` 定义本地 Git hooks，安装由 `scripts/install-lefthook.mjs` 在 postinstall 自动完成，worktree-local 的 hooks 和 merge driver 一起配置。设计意图写在配置头部：本地检查点保持快，CI 拥有完整的仓库级门禁矩阵。
 
-`pre-commit` 有六个 job。配对校验对暂存的 `.i18n.yaml` 跑，改了记录没改内容，提交动作本身就被拦下。归档笔记校验守住冻结目录。Oxlint 对暂存的 TS/TSX 做 lint，带自动修复并把修复重新暂存，vendor 源码排除在外。第三方声明是个"再生而非拒绝"的设计：package.json 或 lockfile 变化时自动重新生成 `THIRD_PARTY_NOTICES.md` 并暂存，一个忘改声明的依赖编辑在提交时被自动补全，而不是被打回。这个设计有个已知盲区：lefthook 只检查磁盘上存在的文件，删掉 manifest 触发不了这个 job，那个场景由测试 lane 的新鲜度断言兜底。最后是空白检查和 vendor manifest 守卫。
+`pre-commit` 有六个 job。配对校验对暂存的 `.i18n.yaml` 跑，改了记录没改内容，提交动作本身就被拦下。归档笔记校验守住冻结目录。Oxlint 对暂存的 TS/TSX 做 lint，带自动修复并把修复重新暂存，vendor 源码排除在外。第三方声明是个"再生而非拒绝"的设计：package.json、lockfile 或生成器变化时自动重新生成 `THIRD_PARTY_NOTICES.md` 并暂存，一个忘改声明的依赖编辑在提交时被自动补全，而不是被打回。这个设计有个已知盲区，配置注释里自己写明：lefthook 只检查磁盘上存在的文件，删掉 manifest 触发不了这个 job，那个场景由测试 lane 的新鲜度断言兜底。最后是空白检查和 vendor manifest 守卫。
 
 `pre-merge-commit` 重复配对和归档两个检查。`pre-push` 只跑 typecheck。测试、快照、文档全量检查、构建，全部故意不在 hooks 里：贡献者在本地跑的是和本次变更相关的最小集合，穷尽覆盖是 CI 的事。hooks 本质上可绕过（`--no-verify` 谁都会打），所以它们的姿态也相应克制：只验证，不再生，不做任何写动作。配对相关的 hook 校验暂存 sidecar 和 owner 在 index 里的字节，对不上就拒绝，但绝不在 hook 里替你重写记录。权威始终在 CI 的全语料 doc-sync。
 
@@ -116,9 +116,9 @@ fail-closed 落在好几层。运行时缺失（没装 Node 或 tsx），launche
 
 门禁检查 hash 和 Markdown 结构。它不能判断两边是否真的说了同一件事，措辞准不准，术语对不对，译文自然不自然。一个重新记录过的配对，如果中文版翻译得很差，门禁会过，而且应该过，因为它的职责到结构为止。语义等价是 reviewer 的半边契约：门禁抓结构不一致，reviewer 抓语义不一致，两边都绿了才算数。假装机械检查能覆盖语义，就是在用绿色徽章给人担保机器给不了的承诺。
 
-翻译执行侧同样有刻意的克制。常规的对应版本更新由工作中的 agent 一次完成：加载 `terminology.md`（术语的唯一真相来源），对着编辑侧的 diff 一个 pass 直译过去，然后重记录。不调用翻译 skill，不生成 briefing，不跑单独的翻译 review pass，不委托 subagent。这些仪式对常规更新是纯开销。扩展的 `dsh-translate-docs` workflow 保留给显式用户调用，那里才有 briefing 生成（`gen-translation-brief` 按最窄安全对齐粒度组装更新）和代码围栏专用补丁（结构校验通过后才拼接）这类重装备。
+翻译执行侧同样有刻意的克制，而且提示词本身也是被测的。常规的对应版本更新由工作中的 agent 一次完成：加载 `terminology.md`（术语的唯一真相来源），对着编辑侧的 diff 一个 pass 直译过去，然后重记录。不调用翻译 skill，不生成 briefing，不跑单独的翻译 review pass，不委托 subagent，这些仪式对常规更新是纯开销。`scripts/translation-prompt.ts` 把仓库内置的提示词模板渲染成英译中、中译英两个方向，术语表注入模板，规则人工校准，三段式响应有解析器；`doc-sync` 里的 `verify-translation-prompt` 检查两个渲染方向和仓库内示例逐字一致，翻译的"提示词工程"也被钉进了门禁。扩展的 `dsh-translate-docs` workflow 保留给显式用户调用，那里才有 briefing 生成（`gen-translation-brief` 按最窄安全对齐粒度组装更新）和代码围栏专用补丁（结构校验通过后才拼接）这类重装备。
 
-## 权衡与局限
+## 权衡
 
 每个 PR 的摩擦是实打实的。编辑任何一侧都要拖着对侧一起走，翻译成了改动路径上的同步成本。这笔账在这个仓库算得过来，前提是双语文档是硬需求（人和 agent 两类读者都是一等公民）；如果一个仓库的翻译只是锦上添花，这套机制的摩擦会超过收益，先想清楚要不要付。
 
@@ -130,17 +130,17 @@ merge driver 的自动化依赖本地环境。Node 或 tsx 缺位的机器上，
 
 ## 结论
 
-双语文档不腐烂，靠的是把"两边说同一件事"拆到可机械执行的粒度。三文件配对让更新成为原子单元，blob hash 让失步变成一次可计算的不等式，snapshot refs 让每次确认可恢复，失步修复退化为对 diff 的最小补丁。结构签名数骨架不数段落，把漏译从 review 的盲区挪进 CI 的必检项。merge driver 组合双方已有的确认、拒绝替单边编辑造记录，把并行协作里最乏味的冲突自动化，同时用 fail-closed 保住"没验证的元数据绝不 silently 落地"的底线。
+双语文档不腐烂，靠的是把"两边说同一件事"拆到可机械执行的粒度。三文件配对让更新成为原子单元，blob hash 让失步变成一次可计算的不等式，snapshot refs 让每次确认可恢复，失步修复退化为对 diff 的最小补丁。结构签名数骨架不数段落，把漏译从 review 的盲区挪进 CI 的必检项。merge driver 组合双方已有的确认、拒绝替单边编辑造记录，把并行协作里最乏味的冲突自动化，同时用 fail-closed 保住"没验证的元数据绝不悄悄落地"的底线。连翻译提示词本身都有双向渲染和门禁核对。
 
 语义等价始终在门外。门禁的绿色只覆盖指纹和结构，翻译质量和术语正确性永远属于 reviewer，这套系统从设计上就没有越界假装覆盖它。评估要不要抄这套机制时，先看两件事：双语文档是不是硬需求，贡献者能否接受每个编辑都带着对侧更新走的摩擦。语料规模反而是可以妥协的变量，小语料只是让这套系统的回本来得晚一些。两件事都成立，这套设计就是模板；有一件不成立，先解决那件事再说。
 
 ## 延伸阅读
 
-- [Bilingual documentation 契约](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/i18n/README.md)
-- [Translation Rules](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/i18n/translation-rules.md)
-- [Terminology](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/i18n/terminology.md)
-- [lefthook.yml](https://github.com/deepseek-ai/deepseek-harness/blob/master/lefthook.yml)
-- [Automatic Pairing Merges Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.md)
+- [Bilingual documentation 契约](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/i18n/README.md)：配对约定、门禁行为、范围与排除的一手定义
+- [Translation Rules](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/i18n/translation-rules.md)：排版纪律与结构保持规则
+- [Terminology](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/i18n/terminology.md)：术语唯一真相源
+- [lefthook.yml](https://github.com/deepseek-ai/deepseek-harness/blob/master/lefthook.yml)：本地检查点的分工边界
+- [Automatic Pairing Merges Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.md)：merge driver 的算法与被否决方案
 
-上一篇：[文档即代码：dsh 用脚本生成图、目录和校验门禁](./45-docs-as-code-autogen-graphs-catalogs.md)
-下一篇：[Cordis 生态溯源：从 Koishi 到 DeepSeek Harness 的插件框架谱系](./47-cordis-lineage-koishi-plugin-framework-genealogy.md)
+上一篇：[dsh 的文档即代码：脚本生成图、目录与校验门禁](./45-docs-as-code-autogen-graphs-catalogs.md)
+下一篇：[dsh 的 Cordis 谱系：从 Koishi 插件框架到这个 harness](./47-cordis-lineage-koishi-plugin-framework-genealogy.md)

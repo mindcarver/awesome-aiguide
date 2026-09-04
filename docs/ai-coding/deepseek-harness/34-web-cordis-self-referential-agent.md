@@ -1,23 +1,25 @@
-# web-cordis：dsh 里会改自己插件树的 agent
+# dsh 的 web-cordis：会改自己插件树的 agent
 
-> `web-cordis` 让 agent 在运行时往自己的 Cordis 进程里挂载模型写的插件：看清当前活着的插件树，定义一个新包，跑起来，停掉，忘掉，全程不碰磁盘、不重启进程、不改任何配置文件。安全骨架是两阶段设计，define 只做语法检查和登记，run 才产生效果，所有副作用集中在一个可以干净回退的点上；代码进浏览器只走一条显式拉取通道，事件永远只带元数据。
-> 信任立场要先说死：vm 沙箱隔离全局变量，但不是安全边界，host 半边的助手函数让包代码可以到达 Node，加载这套工具集等于给 agent 一个 bash 工具。它是插件的草稿纸，不是插件的替代品，实验要固化就走常规开发流程。
+> web-cordis 让 agent 在运行时往自己的 Cordis 进程里挂载模型写的插件：看清当前活着的插件树，定义一个新包，跑起来，停掉，忘掉，全程不碰磁盘、不重启进程、不改任何配置文件。安全骨架是两阶段设计，define 只做语法检查和登记，run 才产生效果，所有副作用集中在一个可以干净回退的点上；代码进浏览器只走一条显式拉取通道，事件永远只带元数据。
+> 信任立场要先说死：vm 沙箱隔离全局变量，但不是安全边界，host 半边的助手函数让包代码可以到达 Node，加载这套工具集等于给 agent 一个 bash 工具。它是插件的草稿纸，不是插件的替代品，实验要固化就走常规开发流程。截至 2026-08，这套能力已经是四个包的家族：工具壳、host 运行器、浏览器运行器、面板与卡片 UI。
 
 ## 自指是什么：把扩展从开发时搬到运行时
 
-`dsh` 的一切能力都是 Cordis 插件挂上去的：模型适配器、工具注册表、会话日志、agent loop，全是插件。正常情况下你扩展这个系统的方式是编辑 `cordis.yml`、重启进程。这是开发时的扩展，动手的是人，时机是停机。
+dsh 的一切能力都是 Cordis 插件挂上去的：模型适配器、工具注册表、会话日志、agent loop，全是插件。正常情况下你扩展这个系统的方式是编辑 `cordis.yml`、重启进程。这是开发时的扩展，动手的是人，时机是停机。
 
 自指（self-referential）指的是另一种情况：agent 在对话进行中，通过一次工具调用，往当前进程的内存里挂一个它自己写的插件。这个插件挂上去立刻活起来，可以注册工具、贡献 prompt 片段、监听事件，和任何正常插件没有区别。不需要重启，不需要改文件，不需要装包。
 
 这个词听起来像递归玄学，落到工程上很具体：五个动词、一个注册表、一个沙箱、一组事件。它是"一切皆插件"架构的终极推论：如果连 agent loop 都是插件，那 agent 自己就该能编辑这个插件组合。这个推论能成立，靠的是 Cordis 的注册全部是可逆副作用，挂载和卸载是干净的运行时操作，fiber 销毁时按序撤销其中所有注册。没有这条地基，运行时改插件树就是把进程往不稳定里推。
 
-## 两个包的分工：工具是薄壳，能力是服务
+## 四个包的分工：工具是薄壳，能力是服务
 
-这套功能拆成两个包。`@deepseek-ai/dsh-tool-cordis` 提供五个模型可见的工具（`cordis_inspect`、`cordis_define`、`cordis_run`、`cordis_stop`、`cordis_undefine`），它只负责把模型意图翻译成对运行器的调用，自己不持有状态，不跑任何代码。`@deepseek-ai/dsh-cordis-host-runner` 提供真正干活的 `ctx.dynamicCordisRunner` 服务，持有定义注册表、vm 沙箱、fiber 生命周期、invoke 处理器表。
+这套功能现在是 `packages/extensions/` 下四个包的家族。`@deepseek-ai/dsh-tool-cordis` 提供五个模型可见的工具（`cordis_inspect`、`cordis_define`、`cordis_run`、`cordis_stop`、`cordis_undefine`），它只负责把模型意图翻译成对运行器的调用，自己不持有状态，不跑任何代码。`@deepseek-ai/dsh-cordis-host-runner` 提供真正干活的 `ctx.dynamicCordisRunner` 服务，持有定义注册表、vm 沙箱、fiber 生命周期、invoke 处理器表。
 
-两者用 inject 声明咬合：组合里挂了工具包但没挂运行器，五个工具不会激活。这是 `dsh` 一贯模式的又一次重复，工具是薄壳，能力是服务，工具负责对模型暴露，服务负责持有机制。
+浏览器那一半归另外两个包。`@deepseek-ai/dsh-cordis-client-runner` 是浏览器半边的运行器：消费 `cordis/request-run` 往返，把定义变成活的浏览器插件，把 retract 事件变成干净的页面。`@deepseek-ai/dsh-client-ui-cordis` 提供人看的东西：一个全帧面板操作 host 持有的每个定义，加一张只读的 `cordis_define` 卡片记录会话定义过什么。
 
-部署方式是在 `cordis.yml` 的 patch 层插一个 `insert` 块，块里两个条目：运行器和工具包。`pnpm run demo:cordis` 一行起 Web 界面，默认 3081 端口（避开常规 demo 的 3080），因为它是一个 patch overlay 叠在 web profile 上；另有 `pnpm run demo:cordis acp` 起 ACP 自动化服务器形态。两个命令都要 `DEEPSEEK_API_KEY`。
+工具包和运行器用 inject 声明咬合：组合里挂了工具包但没挂运行器，五个工具不会激活。这是 dsh 一贯模式的又一次重复，工具是薄壳，能力是服务，工具负责对模型暴露，服务负责持有机制。
+
+部署方式是在 `cordis.yml` 的 patch 层插一个 `insert` 块。`pnpm run demo:cordis` 一行起 Web 界面，端口钉在 3081（避开常规 demo 的 3080），因为它是一个 patch overlay 叠在 web profile 上；另有 `pnpm run demo:cordis acp` 起 ACP 自动化服务器形态。两个命令都要 `DEEPSEEK_API_KEY`。
 
 ## 五个动词覆盖一个完整生命周期
 
@@ -33,7 +35,7 @@
 
 `cordis_undefine` 在包还在跑时先停，然后忘掉定义。卡片留在对话里，作为一条未加载的记录。
 
-五个动词的拒绝方式也统一：每一次拒绝都是一个工具错误，错误文本由运行器的教学文案携带，告诉模型下一步该怎么改。模型在这个子世界里拿到的反馈和它在 `dsh` 其他地方拿到的一样，是可以据以行动的说明，不是一句裸报错。
+五个动词的拒绝方式也统一：每一次拒绝都是一个工具错误，错误文本由运行器的教学文案携带，告诉模型下一步该怎么改。模型在这个子世界里拿到的反馈和它在 dsh 其他地方拿到的一样，是可以据以行动的说明，不是一句裸报错。
 
 定义、运行、停止、卸载，加一个只读的观察，五个动词不多不少。
 
@@ -41,7 +43,7 @@
 
 这个两阶段设计是整个功能的安全骨架，值得把它挡掉的东西逐条数一遍。
 
-define 阶段只做三件事：检查元数据、对两个半边做语法编译、发一个 id。没有任何需要回滚的副作用。语法不对的代码在 id 存在之前就被拒绝，对话历史里不会出现一个"定义了但坏了"的幽灵包。设计文档把验证时机点名为核心要求：一个畸形的工具 schema 必须在注册时失败，不能等下一次请求把它拼进 prompt 时才炸。边界上 `harness.defineTool` 在 host 领域重建 schema，注册表在观测发生前执行工具输出契约；挂载代码通过 `ctx.tools.get` 只拿得到 schema 视图，绕不过 `ToolRuntime.execute`。
+define 阶段做三件事：检查元数据、对两个半边做语法编译、发一个 id。没有任何需要回滚的副作用。语法不对的代码在 id 存在之前就被拒绝，对话历史里不会出现一个"定义了但坏了"的幽灵包。设计文档把验证时机点名为核心要求：一个畸形的工具 schema 必须在注册时失败，不能等下一次请求把它拼进 prompt 时才炸。边界上 `harness.defineTool` 在 host 领域重建 schema，注册表在观测发生前执行工具输出契约；挂载代码通过 `ctx.tools.get` 只拿得到 schema 视图，绕不过 `ToolRuntime.execute`。
 
 run 阶段才产生效果，这让 stop 变得干净：只回退 run 时建立的注册，define 的登记不需要动。运行中的包如果注册了工具、prompt 片段或监听器，后续请求就带着这些贡献跑；`cordis_stop` 和 `cordis_undefine` 在平静之后把它们移除。包的生命周期和它对模型行为的影响完全对齐，跑起来才影响，停下来就消失。
 
@@ -53,13 +55,33 @@ run 阶段才产生效果，这让 stop 变得干净：只回退 run 时建立�
 
 一个打开的浏览器页面收到事件，显示确认界面。人点了允许，页面先调 `runHostHalf` 在服务端跑 host 半边，host 半边失败就短路，浏览器半边不会加载；成功后页面通过 `getClientCode` 拉取 client 半边的源码去加载。代码只通过 `getClientCode` 这一条路到达浏览器，从不搭事件通知的便车。
 
-为什么把两条通道物理隔离？事件是广播，把代码混进广播等于把通知通道变成注入通道。元数据是展示物，代码是执行物，各走各的路，这是 `dsh` 在这个功能里守得最严的一条边界。
+为什么把两条通道物理隔离？事件是广播，把代码混进广播等于把通知通道变成注入通道。元数据是展示物，代码是执行物，各走各的路，这是 dsh 在这个功能里守得最严的一条边界。
 
 事件家族里还有一对值得认识：`dynamicCordisRunner/package` 和 `dynamicCordisRunner/retract`，载荷是 `{id, name, rev}` 和 `{id, rev}`。每一次新鲜的启动和停止，不管包有没有浏览器半边，这对事件都对称地发一次。客户端靠它维持一个连贯的视图：哪些动态包活着、到了第几个修订版。确认往返只服务带浏览器半边的 run，这对事件服务所有包的状态播报，两者不混。
 
-往返的裁决规则值得细看。第一个回答赢，其他页面收到 `cordis/request-run-resolved` 后丢掉待处理的确认界面。迟到的或未知的请求 id 被接受但忽略。一个回答如果命名了一个已被取代的 revision，会被拒绝（`accepted: false`），请求继续挂起，因为那个页面的分派已经陈旧；这种请求最终由另一个页面的回答或调用方的取消来收尾。一个失败的裁决只有在"正是这个请求求值了 host 半边"时才回退 host 半边：一个页面加载失败，不会停掉别的页面正在用的包。归属上还有一个已知粗糙点：`runHostHalf` 不携带请求 id，归属用的是该定义最近武装的那个请求。
+往返的裁决规则值得细看。第一个回答赢，其他页面收到 `cordis/request-run-resolved` 后丢掉待处理的确认界面。迟到的或未知的请求 id 被接受但忽略。一个回答如果命名了一个已被取代的 revision，会被拒绝，请求继续挂起，因为那个页面的分派已经陈旧；这种请求最终由另一个页面的回答或调用方的取消来收尾。一个失败的裁决只有在"正是这个请求求值了 host 半边"时才回退 host 半边：一个页面加载失败，不会停掉别的页面正在用的包。归属上还有一个已知粗糙点：`runHostHalf` 不携带请求 id，归属用的是该定义最近武装的那个请求。
 
-这个往返没有自己的超时。出口只有两个：人回答，或调用方的取消信号（取消会广播出去，让其他页面不再提供确认界面）。没有页面连接的部署里，比如 headless 或 ACP，请求会一直挂到发起的 turn 被取消。无人值守的自动化用不了带浏览器半边的包，这是姿态不是缺陷。
+这个往返没有自己的超时：运行器唯一的配置字段是 `vmTimeoutMs`，默认 5000 毫秒，约束 host 半边的同步求值。出口只有两个：人回答，或调用方的取消信号（取消会广播出去，让其他页面不再提供确认界面）。没有页面连接的部署里，比如 headless 或 ACP，请求会一直挂到发起的 turn 被取消。无人值守的自动化用不了带浏览器半边的包，这是姿态不是缺陷。
+
+## 浏览器半边：守门门面与同一条挂载轨道
+
+浏览器半边的加载机制值得单独看，因为它的纪律和 host 半边同源。client 代码作为一个 async 函数体求值，参数是它的符号面：`React`、`console`、`styles`、`host`，外加几个遮蔽 `setTimeout`、`fetch`、`require` 的教学陷阱，一调用就抛出指路错误。没有 JSX，没有 TypeScript，没有模块导入。
+
+拿到的 ctx 不是裸的 fiber，是一个白名单代理：生命周期动词，加上返回的插件对象在自己的 `inject` 里声明过的服务。对象形式 `{ inject: ['slots'], apply(ctx) {} }` 才够得到服务，一个裸函数没有声明点，什么服务都够不到。这和 host 半边"够得到的只有声明过 inject 的服务"是同一条规矩的两次落地。
+
+挂载走的是 `loader.create`，和静态插件同一条轨道：同样的激活门控、同样的 fiber effect 清理、同样的状态投影。也就是说浏览器半边的动态包不是一套山寨的生命周期，它真的就是 Cordis 插件，只是来源是运行时的对话。卸载是模块表条目移除加工厂失效加样式移除。slot 座位上"注册即遮蔽"，最新一次 run 赢得优先级；theme 座位把覆盖层的来源钉在包 id 上，销毁器挂在 fiber 上。
+
+包内 RPC 只有一个方向：浏览器半边通过 `host.call` 走 Remote 命名空间（invoke）调 host 半边用 `harness.handle` 注册的方法。两个方向都只运 JSON：省略的参数按 null 传（所以 `host.call('listServices')` 合法，处理器收到 null），一个生成 codec 拒绝的载荷（函数、undefined、类实例）变成指名这次调用和契约的教学错误，不是 codec 的裸字段名。host 到浏览器没有方向，想从服务端主动推东西给页面，没有这条路。
+
+## 面板与卡片：人这一侧看到的
+
+面板的全局性是刻意的设计，README 花了一整段解释为什么。模型驱动的 `cordis_run` 会在 host 侧阻塞等一个 `cordis/request-run` 往返，答案是一个人按允许；它点名的定义可能属于一个没人正在看的会话，一个只有那个会话的 transcript 里才够得着的批准，恰恰在它阻塞模型的时候够不着。所以回答面是一个 `shell.overlay` 条目（这个包贡献给 ui-layout 的通用全帧浮层座位，不是自己的 React root）：一个徽标计数正在跑的加正在等的，打开一个列出所有定义及其运行控件的列表。列表不按会话过滤，选中会话的行排前面，别人的行排在下面照常可操作。
+
+行的材料来自两个独立的事实源。host 在跑什么来自全局 `inventory` 调用；本页加载了什么来自浏览器运行器的活集合。两者在每次刷新时岔开：host 继续跑着一切，新页面什么都没持有。host 在跑且本页持有的行给全局停止；host 在跑但本页没持有的行先给"加载回来"再给停止，两个分开的控件，因为在本页加载浏览器半边和替所有页面停掉定义是两件事。刷新后的恢复路径（拉 inventory、把定义加载回本页）就从这个控件走。
+
+渲染失败也要落在行上。浏览器半边可能加载成功、回答了 ok、然后 React 渲染时才抛异常，这种错误只到浏览器控制台，模型和看面板的人都读不到。行内联携带本页最后一次渲染失败，和加载失败放在同一个槽位：一个是"没加载上"，一个是"加载上了然后炸了"，一行可以诚实地两种都显示过。上游还有 `reportRenderFailure` 把失败报给定义它的会话（给模型看），火后不理，没有裁决权，永远不碰 run 的结果；非属主会话发来的报告被丢弃。读回来的办法是 `cordis_inspect what:"temporary"`。
+
+卡片是一份记录，不是一个开关。它显示模型写的名字和用途、写的源码、定义现在跑没跑，材料完全来自冻结的调用与结果切片（标签来自 `argsRaw`，host 铸的 id 来自结果的 `meta.id`），所以回放渲染出同一张卡。有一个精巧的裁决：本会话日志里一次成功的 `cordis_undefine` 是持久且终结的，优先级高于线上状态，因为线上看一个 retract 广播和一个普通停止长得一模一样。
 
 ## 信任立场：沙箱不是安全边界
 
@@ -87,7 +109,7 @@ run 阶段才产生效果，这让 stop 变得干净：只回退 run 时建立�
 
 想固化一个实验，README 的指引是让 agent 把它实现成正常的本地、项目或仓库插件，走常规开发流程。动态包不创建插件文件、不装包、不改 `cordis.yml`，它从头到尾是一张草稿纸。
 
-回放的时候这张草稿纸的边界也很清楚。会话日志里存着 define 的元数据和那张卡片，但不存代码，所以回放出的对话能看到"这里定义过一个包"，卡片却是一个未加载的记录：id 对应的定义在当前进程里不存在。inspect 的空态文案把这件事说破，定义只活在进程内存里。回放保真的是对话的样子，不是运行时的状态，这和 `dsh`"模型可见即可重建"的总纪律并不冲突：卡片和元数据是模型可见的，它们被如实重建；进程内的注册表从来不是模型可见物，也就不在重建义务之内。
+回放的时候这张草稿纸的边界也很清楚。会话日志里存着 define 的元数据和那张卡片，但不存代码，所以回放出的对话能看到"这里定义过一个包"，卡片却是一个未加载的记录：id 对应的定义在当前进程里不存在。inspect 的空态文案把这件事说破，定义只活在进程内存里。回放保真的是对话的样子，不是运行时的状态，这和 dsh"模型可见即可重建"的总纪律并不冲突：卡片和元数据是模型可见的，它们被如实重建；进程内的注册表从来不是模型可见物，也就不在重建义务之内。
 
 只在内存里不是一个偷懒的实现选择，是设计文档点名的正确性要求：挂上去的每一样东西必须完全可丢弃，模型随手能丢，普通插件生命周期也能丢。可丢弃性靠两条腿站着：没有持久化，就没有恢复路径要写对；没有自定义销毁器，就没有卸载语义要追。把这两条中的任何一条换成"顺便支持一下落盘"或"顺便允许注册清理钩子"，停干净这件事就从结构保证退化成约定，而约定是会被忘掉的。
 
@@ -111,7 +133,7 @@ run 阶段才产生效果，这让 stop 变得干净：只回退 run 时建立�
 
 进程在这一切中间重启的话，一切归零：注册表空了，对话还在，卡片变成未加载记录，模型重新 define 一遍就是恢复路径。没有比这更朴素的崩溃语义，也没有比这更彻底的无状态。
 
-如果包带浏览器半边，run 走上一节的往返：事件出去（只带元数据），页面确认，host 先跑，代码后拉，第一个回答裁决。页面里挂载的插件声明它的 inject，是页面从返回的插件对象上读的，不靠公告携带。
+如果包带浏览器半边，run 走往返：事件出去（只带元数据），页面确认，host 先跑，代码后拉，第一个回答裁决。页面里挂载的插件声明它的 inject，是页面从返回的插件对象上读的，不靠公告携带。
 
 失败在这条链上有确定的名字。run 的拒绝理由是一组闭合的码：`definition-missing`、`host-half-failed`、`client-half-failed`、`rejected`、`cancelled`、`not-running`。前三个是缺陷，后三个是答案：被人拒绝、被取消、本来就没在跑，都不算坏。模型按码决定下一步，重试还是换路，不用从报错文本里猜。host 半边失败发生在浏览器加载之前（host 先跑的顺序就是为这个短路设计的），所以一次失败的 run 不会留下半个包：要么两半都活了，要么什么都没发生。
 
@@ -123,11 +145,9 @@ run 阶段才产生效果，这让 stop 变得干净：只回退 run 时建立�
 
 一个 waterfall 监听器返回时没调 `next()`，链条被短路，这个挂载可以停掉 agent 自己的工具分派。挂载代码本身跑在一次工具调用里：await 一个只有 turn 结束才会 resolve 的东西，直接死锁。
 
-run 的回执不等于渲染成功。run 在页面加载了 client 半边后就返回，React 渲染发生在之后，一个组件抛出的异常不会出现在 run 的回执里。渲染失败走 `reportRenderFailure` 异步报告：火后不理，没有裁决权，永远不碰 run 的结果；host 侧每个定义保留最后一次失败（第二次报告覆盖第一次），重跑、stop、undefine 会清掉它；非属主会话发来的报告被丢弃。读回来的办法是 `cordis_inspect what:"temporary"`。
+run 的回执不等于渲染成功。run 在页面加载了 client 半边后就返回，React 渲染发生在之后，一个组件抛出的异常不会出现在 run 的回执里。渲染失败走 `reportRenderFailure` 异步报告：火后不理，没有裁决权，永远不碰 run 的结果；host 侧每个定义保留最后一次失败（第二次报告覆盖第一次），重跑、stop、undefine 会清掉它。模型要读它，得用 `cordis_inspect what:"temporary"`。
 
-`vmTimeoutMs` 默认 5000 毫秒，约束 host 半边的同步求值，一个 async 的包体逃逸这个限制。它是运行器唯一的配置字段。ctx 门面不暴露 `effect()`，包代码注册不了自定义销毁器，支持的清理路径只有 `on`、`provide`、`tools.register` 三种。这是有意的限制：自定义销毁器会让卸载语义不可控，而可卸载性是这个功能的存在前提。
-
-调用方向也只有一条：浏览器半边可以通过 invoke 调 host 半边用 `harness.handle` 注册的方法，host 到浏览器没有方向。想从服务端主动推东西给页面，没有这条路。
+`vmTimeoutMs` 默认 5000 毫秒，约束 host 半边的同步求值，一个 async 的包体逃逸这个限制。ctx 门面不暴露 `effect()`，包代码注册不了自定义销毁器，支持的清理路径只有 `on`、`provide`、`tools.register` 三种。这是有意的限制：自定义销毁器会让卸载语义不可控，而可卸载性是这个功能的存在前提。
 
 ## 被否决的方案
 
@@ -151,15 +171,15 @@ run 的回执不等于渲染成功。run 在页面加载了 client 半边后就�
 
 ## 结论
 
-`web-cordis` 把"一切皆插件"推到终点：agent 用五个工具在运行时编辑自己的插件树，define 只记录、run 才生效，代码进浏览器只走 `getClientCode` 的显式拉取，进程内存是唯一真相，重启即清零。模型能上手靠的是两张从代码生成的地图，不是运行时反射。信任立场要记牢：vm 沙箱不是安全边界，加载这套工具集等于给 agent 一个 bash。它是插件的草稿纸，不是插件的替代品；想留下的东西，让 agent 把它写成一个真正的插件，走常规开发流程。
+web-cordis 把"一切皆插件"推到终点：agent 用五个工具在运行时编辑自己的插件树，define 只记录、run 才生效，代码进浏览器只走 `getClientCode` 的显式拉取，进程内存是唯一真相，重启即清零。浏览器半边和静态插件走同一条挂载轨道，白名单门面把"够得到什么"钉在声明上；面板全帧不按会话过滤，因为阻塞模型的批准必须处处可达。模型能上手靠的是两张从代码生成的地图，不是运行时反射。信任立场要记牢：vm 沙箱不是安全边界，加载这套工具集等于给 agent 一个 bash。它是插件的草稿纸，不是插件的替代品；想留下的东西，让 agent 把它写成一个真正的插件，走常规开发流程。
 
 ## 延伸阅读
 
-- [tool-cordis README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/extensions/tool-cordis/README.md)
-- [cordis-host-runner README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/extensions/cordis-host-runner/README.md)
-- [web-cordis 示例](https://github.com/deepseek-ai/deepseek-harness/blob/master/examples/web-cordis/README.md)
-- [自指工具集 Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md)
-- [工具目录（generated）](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/tool-catalog.md)
+- [tool-cordis README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/extensions/tool-cordis/README.md)：五个工具的模型契约与四类约定
+- [cordis-host-runner README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/extensions/cordis-host-runner/README.md)：运行器服务与沙箱边界
+- [cordis-client-runner README](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/extensions/cordis-client-runner/README.md)：浏览器半边的求值、门面与往返编排
+- [web-cordis 示例](https://github.com/deepseek-ai/deepseek-harness/blob/master/examples/web-cordis/README.md)：运行命令与自指示例
+- [自指工具集 Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md)：设计决策与被否决方案
 
-上一篇：[ACP 协议与 acp-agent：dsh 的 agent 通话标准](./33-acp-protocol-acp-agent.md)
-下一篇：[配置、凭证与存储：dsh 的有状态底座三件套](./35-settings-credentials-storage.md)
+上一篇：[dsh 的 ACP 协议与 acp-agent：agent 通话标准怎么落地](./33-acp-protocol-acp-agent.md)
+下一篇：[dsh 的配置、凭证与存储：有状态底座三件套](./35-settings-credentials-storage.md)

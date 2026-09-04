@@ -1,11 +1,11 @@
-# 配置、凭证与存储：dsh 的有状态底座三件套
+# dsh 的配置、凭证与存储：有状态底座三件套
 
-> `dsh` 把用户配置、凭证、键值存储做成三个独立但同构的接缝，共同原则是引用和值分离、机制和策略分离、改了不用重启。消费者拿到的是名字和类型化入口，provider 持有介质和值，所以换后端、轮换凭证、改配置都不用惊动进程。
-> 每个子系统各有一条最值得记住的纪律：settings 的写入先过验证再落盘，注册期失败比运行期警告更严；credentials 每次操作都重新解析，绝不跨操作缓存，凭证轮换在下一次请求就生效；storage 的写入链把介质持久化排在内存变更之前，读取永远和介质一致。
+> dsh 把用户配置、凭证、键值存储做成三个独立但同构的接缝，共同原则是引用和值分离、机制和策略分离、改了不用重启。消费者拿到的是名字和类型化入口，provider 持有介质和值，所以换后端、轮换凭证、改配置都不用惊动进程。
+> 每个子系统各有一条最值得记住的纪律：settings 的写入先过验证再落盘，注册期失败比运行期警告更严；credentials 每次操作都重新解析，绝不跨操作缓存，凭证轮换在下一次请求就生效，记录空间用跨进程文件锁保住令牌刷新；storage 的写入链把介质持久化排在内存变更之前，读取永远和介质一致。截至 2026-08，credentials 刚长出第二套键空间和一个授权接缝，这篇按三个子系统依次拆。
 
 ## 为什么这三个放一起讲
 
-`dsh` 的会话事件日志有自己的独立子系统，不在这篇的范围。这篇讲会话日志之外的三类有状态数据：用户配置（settings）、凭证（credentials）、键值存储（storage）。
+dsh 的会话事件日志有自己的独立子系统，不在这篇的范围。这篇讲会话日志之外的三类有状态数据：用户配置（settings）、凭证（credentials）、键值存储（storage）。
 
 三个领域看起来不相干，共享的却是同一套骨架。引用和值分离：配置项、凭证名、存储域名是引用，实际的值由 provider 持有，消费者拿着引用运行时才解析。机制和策略分离：接缝定义抽象接口，provider 实现具体介质（文件、环境变量、SQLite），消费者只声明需求。热更新：三个子系统都支持运行时修改立即生效。secret 感知：配置和凭证都区分 secret 字段，上 wire 就脱敏。
 
@@ -47,13 +47,17 @@ schema 能做单字段验证（类型、范围、枚举），做不了跨字段�
 
 脱敏引出一个必须直面的不对称：拿着脱敏 descriptor 的调用方无法安全重建 section，它没见过 secret 字段。所以删除走 path op（`{ op: 'unset', path: [...] }`）而不是 `replace`。一个脱敏方如果用 `replace` 重建 section，会悄悄删掉 wire 从没还给它过的每个 secret 字段。path op 让调用方点名要改的字段，不重述整个 section。这条纪律的适用范围超出 settings：任何"读出来的是投影、写回去想当全量"的接口，都有同一个坑。
 
+浏览器配置页的暴露面在 2026-08 有一处值得记录的放宽：api-proxy 里两份硬编码的命名空间白名单（web 与产品各一份）连同 `settings-not-exposed` 错误码被整体删除，改为"注册即暴露"，`ctx.settings.describe()` 应答的每一个命名空间都可读可写。决策笔记对这道旧白名单的实际效力做了诚实的清算：真正的边界一直来自另外三处，全部方法在特权方法表里、非回环跨源请求在到达前就 403、secret 字段在每种响应的每层被结构性剥离；它没挡住的写入里恰恰包含权限预设和 agent preset 这些有分量的。将来某个命名空间的值确实不该过线，由 `role('secret')` 逐字段回答，比整命名空间开关更精细。
+
 ## ctx.credentials：引用、四层来源、每次解析
 
 凭证子系统解决的是怎么把 secret 从配置里赶出去。做法：配置项和 `cordis.yml` 条目里只放引用，引用是一个 POSIX 风格的环境变量名，branded 类型挡住和普通字符串的混用。消费者每次需要凭证时 `resolve(ref)` 拿值和来源层，没配置就是 `undefined`。
 
 本地 provider 的值可以从四层来：进程环境 `env`、provider 自己管的 `file` 存储、项目级 `.env`（`project-env`）、用户级 `.env`（`user-env`）。四层的存在让"项目里放一把测试 key、用户目录放一把真 key"成为普通的配置问题，不是代码问题。
 
-最关键的设计决策是消费者每次操作都重新解析，绝不跨操作缓存。LLM 适配器每次模型请求 resolve 一次，轮换过的 API key 在下一次请求就生效，不用重启。这和"启动时读一次缓存到进程死"的传统做法方向相反，能成立是因为 resolve 是读一次环境变量或文件的轻操作，不是重计算。代价是每次请求多一次 resolve 调用，极高吞吐下才需要看一眼，回报是凭证轮换零延迟生效，以及"进程里不存在一份可能过期的 secret 副本"这个更干净的属性。
+受管文件本身在 2026-08 经历了一次拆分。此前 `$DSH_HOME/.env` 同时干两份不相容的工作：它既是受管密钥存储（不能提升进 `process.env`，否则已存密钥全部变只读的启动覆盖，阻断轮换），文件名和格式又承诺一个普通环境文件（用户放进去的非机密值哪儿也到不了）。现在的答案是两个文件：`.credentials.yaml` 是 provider 管理的密钥存储，一份从 `CredentialRef` 到非空字符串的严格映射，任何偏离都拒绝而不是跳过条目（根节点不是映射、非 POSIX 键、非字符串、空字符串、重复键、坏 YAML 全部响亮失败），POSIX 上还要求 0600 权限，带任何 group 或 other 位就在读取内容之前让启动失败，诊断里给出 `chmod 600` 修复命令；Windows 没有可检查的 mode，跳过而不是伪造。`$DSH_HOME/.env` 回归它的本名，成为用户的普通环境层，产品 CLI 的 `loadLayeredEnv` 先解析调用目录的 `.env` 再解析 home 的，得到"用户、项目、继承"的叠加；SDK 和示例不继承开发者的 home 环境。
+
+最关键的设计决策仍然是消费者每次操作都重新解析，绝不跨操作缓存。LLM 适配器每次模型请求 resolve 一次，轮换过的 API key 在下一次请求就生效，不用重启。这和"启动时读一次缓存到进程死"的传统做法方向相反，能成立是因为 resolve 是读一次环境变量或文件的轻操作，不是重计算。代价是每次请求多一次 resolve 调用，极高吞吐下才需要看一眼，回报是凭证轮换零延迟生效，以及"进程里不存在一份可能过期的 secret 副本"这个更干净的属性。
 
 resolve 的返回里还带着来源层的名字。这个信息平时无用，排障时是真金：用户报告"换了 key 没生效"，第一件事就是看当前值来自哪一层。答案是 env，说明进程环境里有一把遮蔽的旧 key，改用户层的存储不会有用；答案是 user-env，说明 `.env` 文件还没被重新加载。来源层把"值是多少"和"值从哪来"一起交付，让"为什么是这个值"变成一个可回答的问题，而不是一场翻遍四层的考古。
 
@@ -67,13 +71,19 @@ resolve 的返回里还带着来源层的名字。这个信息平时无用，排
 
 事件方面，`credentials/reference-updated` 只在 provider 管理的源变化时发（set、unset、存储里观测到的外部编辑），进程环境变量的变化不发，因为进程环境不可观测。有意思的是消费者根本不需要这个事件，它们每次都重新解析；事件存在的唯一理由是让配置界面刷新"已配置"的徽标。一个为 UI 而生、为正确性而不需要的事件，存在感很诚实。
 
-## 记录空间：为令牌刷新而生
+## 记录空间与授权接缝：为登录和令牌刷新而生
 
-凭证子系统里还有第二套键空间，容易被忽略但 solves 一个真问题。引用回答"这个配置项用哪个环境变量"，记录（record）回答"这个插件为这个 id 持有什么凭证"。记录的存在本身就是全部事实，值是黑盒。
+凭证子系统里还有第二套键空间，2026-08-13 的决策把它连同一个新的授权接缝一起补全。引用回答"这个配置项用哪个环境变量"，记录（record）回答"这个插件为这个 id 持有什么凭证"。
 
-记录的写路径只有一条：`modifyRecord`，一个串行化的读改写，带跨进程互斥。这个形状是为 OAuth 令牌刷新定制的，值得把时间线摆出来看。两个并发请求同时发现令牌过期：没有互斥的世界里，两者各自向授权服务器换新令牌、各自写回，后写的赢，先写的那枚新令牌立刻作废，而下一次刷新用的 refresh token 可能已经被消耗，链条断在半空。有互斥的世界里，第一个调用方进入读改写，第二个在门外等；第一个写完，第二个读到新令牌直接用，全程只有一次刷新。`authorization/settled` 事件为每个终态发一次，失败也发，刷新的失败和成功一样是可观测的事实，监控不用从"没有成功事件"里反推失败。并发到达的第二个授权调用被拒绝而不是被合并，拒绝携带明确的码，调用方决定重试还是放弃。
+这条线的来历值得讲，因为它是一个真实故障。凭据平面原本只能表达一种机密：环境变量名背后的值，恰好覆盖 API key。但有些凭据不是"可以让部署方去存的"，是被取得的：人打开页面、批准账号、把码粘回来，产出一份带 refresh 半边、会在用户背后轮换的 token 文档。pi-ai 的 `CredentialStore` 在适配器里退化为内存默认实现，每次启动为空；只以 OAuth 认证的 `openai-codex` 每个请求都失败，发布前被目录扣留了事，扣住了错误的供给但没补上能力。
 
-两套键空间的事件也分开（`reference-updated` 和 `record-updated`），因为两套键的语法不相交，一个事件混载两种键只会逼消费者猜。记录没有 schema 发现路径，所以有 `listRecords()`；引用没有枚举，因为没有场景需要"列出所有可能的环境变量名"。移除一个不存在的引用或不存在的记录都是 no-op，删除幂等，不制造假错误。
+现在的形状是三个接缝各管一件事。`dsh-credentials` 长出第二个键空间：`CredentialKey` 的形式是 `<scope>/<id>`，scope 是拥有该记录的插件的注册名，不是 provider 名。用户知道的是 `openai-codex`，哪个 adapter 家族为记录里的字节负责，恰恰是裸 provider 名会丢掉的信息；斜杠同时让两种文法互斥，两个键空间不可能相撞。记录联合体是 `{ kind: 'api-key', key?, env? } | { kind: 'grant', payload }`：api-key 半边结构化，因为接缝能描述它；grant 半边不透明，因为拥有 token 格式的库应当继续拥有它，对 payload 的唯一约束是能原样过一次 JSON 往返。记录不分层，授权 grant 没有"环境"可读，记录是否存在就是全部事实；一条既无 key 也无 env 的 api-key 记录，陈述的是拥有者确认了环境认证可用，这算已配置。
+
+`dsh-authorization` 拥有对话，从不拥有协议。知道自己怎么取得凭据的插件以它写入的 `CredentialKey` 注册一个 flow；接缝对每个键同时只跑一次尝试，第二次 `begin()` 被拒绝（`ALREADY_IN_FLIGHT`）而不是合并，因为两个调用方在同一条 flow 里提示的是两个人，第二个会替第一个回答问题。两个关键选择：写入由 flow 拥有，`run()` 返回即记录已提交，接缝核实的是本次尝试期间观察到的提交，flow 返回了却没提交记录就拒绝（`NOT_COMMITTED`），这让 pi-ai 的 `Models.login()` 保持唯一写入方；交互随请求传入而不是注册在表里，发起授权的一方才是能与人对话的一方，提示恰好抵达发问的那个页面，headless 调用方传入一个直接拒绝的交互实现，不存在"该归两个已打开标签页中哪一个"的问题。`authorization/settled` 为每个终态发一次，失败也发，刷新的失败和成功一样是可观测的事实。凭据平面整体可选：没有凭据服务时读取回答"未存储"，写入指名拒绝，因为一次 grant 凭空蒸发的登录会先报成功再让每个请求失败。
+
+记录的写路径只有一条：`modifyRecord`，一个串行化的读改写，带跨进程互斥。这个形状是为令牌刷新定制的，把时间线摆出来看。两个并发请求同时发现令牌过期：没有互斥的世界里，两者各自向授权服务器换新令牌、各自写回，后写的赢，先写的那枚新令牌立刻作废，而下一次刷新用的 refresh token 可能已经被消耗，链条断在半空。有互斥的世界里，第一个调用方进入读改写，第二个在门外等；第一个写完，第二个读到新令牌直接用，全程只有一次刷新。锁的等待时长是按争用方定的：pi-ai 在 `modify()` 内部执行 OAuth 刷新，记录写入路径要跨一次网络往返持锁，默认等待值按争用方可能遇到的最长持锁方选定，引用和记录共享同一份文件、同一把锁，这份文档的每一个写入方都要等得起一次刷新，不只是执行刷新的那个。
+
+`.credentials.yaml` 的文档格式随之长出版本和两个分区（refs 与 records）。启动时会把能精确识别的发布前扁平布局在写锁下原地升级，早期内测构建经模型页面存下的密钥在布局变更后继续可用；识别不了的扁平形态被指名拒绝，迁移办法写在报错信息里，这段迁移代码将随首个正式版本移除。带来的一笔生态账：凡是自带登录的已安装 provider 都有登录入口，决策笔记写作时是全部 38 个，31 个经 pi-ai 自己的提示收 key，6 个在此之外还提供订阅登录，Codex 只提供订阅登录。界面层尚未跟上：把 notice 和 prompt 送到浏览器的 wire 契约、Models 页上发起登录的控件都还没做，在那之前 flow 只能进程内触达，部署方仍在设置表单里输 key。两条限制记在 README：一次尝试不可持久，登录途中刷新页面会丢弃它；登出即 `deleteRecord`，只在本地遗忘不通知签发方。
 
 ## ctx.storage：hub 不做 IO，facet 不装懂
 
@@ -117,27 +127,27 @@ global 槽的语义有个温和的默认：`get()` 在第一次 `set` 之前返�
 
 domain 打开之后的句柄也有两个小而稳的属性：`table(name)` 重复调用返回同一个实例，句柄可以放心存起来复用；`get(name)` 是一个无类型的诊断入口，给调试和工具用，正常消费者走类型化的 `ctx.storageDomain`。两条规定合起来，把"日常路径全类型、逃生路径明码标价"这个接口设计习惯又落了一次。
 
-迁移当前不存在。盖了不同 version 的介质拒绝打开，解析不了的介质拒绝打开，这是明说的 pre-release 姿态：格式还会变，变了就手动处理旧数据，不提供半吊子的自动迁移。早期这是合理的诚实，等格式稳定，这里会是这套子系统最显眼的待办。
+迁移当前不存在。盖了不同 version 的介质拒绝打开，解析不了的介质拒绝打开，这是明说的 pre-release 姿态：格式还会变，变了就手动处理旧数据，不提供半吊子的自动迁移。早期这是合理的诚实，等格式稳定，这里会是这套子系统最显眼的待办。设计记录本身也还住在提案目录里（`.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md`），实现已经进了仓库、子系统文档已经落地，笔记的搬迁是文档债不是能力缺口。
 
 ## 权衡与局限
 
 三个子系统都把"改了不用重启"当默认，软肋也同源：一部分约束靠约定，观测各有边界。
 
-settings 的 `applies: 'restart'` 没有强制力，owner 偷偷 watch 没人拦。`INVARIANT` 只能来自同步监听器，这条约束同样是约定。凭证不观测进程环境变量，改了环境变量 UI 徽标不刷新，好在消费者下次解析自然拿到新值，坏的只是显示。存储没有迁移，事件只在进程内：两个进程共享同一个 SQLite 文件，一个进程的写入不会通知另一个，跨进程变更推送是记录在案的限制。credentials 每次解析有性能代价，极高吞吐下值得量一量。
+settings 的 `applies: 'restart'` 没有强制力，owner 偷偷 watch 没人拦。`INVARIANT` 只能来自同步监听器，这条约束同样是约定。凭证不观测进程环境变量，改了环境变量 UI 徽标不刷新，好在消费者下次解析自然拿到新值，坏的只是显示。授权流程的界面层还没接上：flow 只能进程内触达，登录尝试不持久，刷新页面就丢，登出不通知签发方。存储没有迁移，事件只在进程内：两个进程共享同一个 SQLite 文件，一个进程的写入不会通知另一个，跨进程变更推送是记录在案的限制。credentials 每次解析有性能代价，极高吞吐下值得量一量。
 
-这些边界有个共同形状：机制保证的都是单进程内的一致性和可恢复性，跨进程的协调（存储通知、环境观测、授权互斥除外）一律明说不做。单进程是 agent harness 的默认拓扑，为不存在的拓扑预付复杂度不划算，但多进程部署的人需要先知道这些线画在哪。
+这些边界有个共同形状：机制保证的都是单进程内的一致性和可恢复性，跨进程的协调（存储通知、环境观测除外，记录互斥倒是跨进程的文件锁）大多明说不做。单进程是 agent harness 的默认拓扑，为不存在的拓扑预付复杂度不划算，但多进程部署的人需要先知道这些线画在哪。
 
 ## 结论
 
-settings、credentials、storage 是三个同构的接缝：引用和值分离，机制和策略分离，secret 在 API 层就被脱敏或隔离，改了不用重启。它们的纪律可以各记一句：settings 的写入先验证再落盘，注册期比运行期严，因为没有退路；credentials 每次操作重新解析，进程里不存 secret 副本，记录空间用串行互斥保住令牌刷新；storage 的介质持久化排在内存变更之前，事件在持久化之后只做通知，facet 不装懂，加载期钉死坏 spec。会话日志之外的有状态数据，就由这三件套收拢，而它们共同的软肋（跨进程、约定型约束）也都写在明处。
+settings、credentials、storage 是三个同构的接缝：引用和值分离，机制和策略分离，secret 在 API 层就被脱敏或隔离，改了不用重启。它们的纪律可以各记一句：settings 的写入先验证再落盘，注册期比运行期严，因为没有退路，wire 上脱敏、删除走 path op；credentials 每次操作重新解析，进程里不存 secret 副本，记录空间用跨进程文件锁保住令牌刷新，授权接缝把"取得凭据的对话"从协议细节里解放出来；storage 的介质持久化排在内存变更之前，事件在持久化之后只做通知，facet 不装懂，加载期钉死坏 spec。会话日志之外的有状态数据，就由这三件套收拢，而它们共同的软肋（跨进程、约定型约束、授权界面未竟）也都写在明处。
 
 ## 延伸阅读
 
-- [Settings 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/settings.md)
-- [Credentials 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/credentials.md)
-- [Storage 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/storage.md)
-- [能力接缝设计记录](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)
-- [Domain KV 存储 Agent Note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md)
+- [Settings 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/settings.md)：三层叠加、写入路径与脱敏契约
+- [Credentials 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/credentials.md)：两个键空间与授权接缝的完整签名
+- [凭据记录与授权 flow 决策笔记](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-13-credential-records-and-authorization-flows.md)：第二键空间的设计理由与被否决方案
+- [凭据存储与用户环境层拆分笔记](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-04-credentials-yaml-and-user-environment-layer.md)：.credentials.yaml 的严格格式与 0600 边界
+- [Storage 子系统文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/storage.md)：hub、backend、domain 三角色与写入链
 
-上一篇：[web-cordis：dsh 里会改自己插件树的 agent](./34-web-cordis-self-referential-agent.md)
-下一篇：[Telemetry 可观测性：dsh 怎么接 OTel 监控](./36-telemetry-observability.md)
+上一篇：[dsh 的 web-cordis：会改自己插件树的 agent](./34-web-cordis-self-referential-agent.md)
+下一篇：[dsh 的 Telemetry 可观测性：怎么接 OTel 监控](./36-telemetry-observability.md)
