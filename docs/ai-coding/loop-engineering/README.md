@@ -1,0 +1,171 @@
+# Loop Engineering 专题：把“提示词”升级成可运行的代理控制系统
+
+> 6 篇文章（1 篇总览 + 5 篇正文），基于 [cobusgreyling/loop-engineering](https://github.com/cobusgreyling/loop-engineering) 在 2026-06-28 可见仓库内容整理。
+> 核心不是“怎么写更好的 prompt”，而是“怎么设计一个会持续驱动 agent 干活、记录状态、控制风险的系统”。
+
+## 这个专题在讲什么
+
+Loop engineering 可以先粗暴理解成一句话：
+
+**你不再亲自一轮一轮提示 agent，而是设计一个循环系统，让它在设定好的节奏、边界和验证机制里持续工作。**
+
+这个主题之所以值得单独讲，不是因为它提出了一个新名词，而是因为它把很多原本分散的工程实践串成了一个整体：
+
+- 定时触发，不再每次手动喊 agent 开工
+- 状态文件，不再每次会话都从零开始
+- maker / checker 分离，不让同一个 agent 自己给自己判对
+- worktree 隔离，不把自动修复直接砸进主工作区
+- 连接 GitHub、Linear、Slack 等外部系统，让 loop 真正接触“现实世界”
+- 用预算、run log、denylist、人类 gate 约束自动化风险
+
+如果说 harness engineering 研究的是“模型之外那层工程外壳”，那么 loop engineering 更像是在 harness 之上，继续追问：
+
+**怎么把 agent 变成一个持续运行、可观测、可升级、可停机的工程流程。**
+
+## 这个专题适合谁
+
+- 已经在用 Claude Code、Codex、Cursor、Cline，但不想每次都手动盯着 agent 干活的人
+- 想把 daily triage、PR 跟进、CI 清理、依赖升级这类重复任务交给 agent 的团队
+- 对 agent 自动化感兴趣，但知道“直接全自动”风险太高，想先掌握渐进式上线方法的人
+- 想把 `SKILL.md`、`AGENTS.md`、状态文件、sub-agent、MCP 串成一套长期工作流的人
+
+## 这个专题不是什么
+
+- 不是某一个产品的官方教程
+- 不是“多写几个 prompt 模板”的合集
+- 不是鼓励你一上来就开全自动 PR bot
+- 不是替代 harness engineering、goal engineering 或 agent framework 的上位词
+
+更准确地说，它是一套**面向真实代理工作流的运行设计方法**。
+
+## 你会带走哪些核心判断
+
+### 一、loop 不是 prompt 模板，而是控制系统
+
+真正的 loop 至少要回答这些问题：
+
+- 什么时候触发
+- 每次运行读什么状态
+- agent 做到哪一步必须停
+- 谁来验证结果
+- 哪些路径必须人工接管
+- 花了多少 token，跑了多少次，出了什么故障
+
+缺了这些，通常都还不叫 loop，只能算“长一点的 prompt”。
+
+### 二、状态是 loop 的脊柱
+
+源仓库最有价值的一点，不是列了多少 pattern，而是把 **`STATE.md` / run log / budget / LOOP.md** 这种“外部记忆骨架”明确成一等公民。没有状态文件，loop 每次重启都失忆；没有 run log，团队只会在出事后才发现 agent 过去几天都在做什么。
+
+### 三、应该先做 L1，再谈 L2/L3
+
+这是整个方法最务实的部分：
+
+- **L1**：只报告，不改代码
+- **L2**：在 verifier 和 worktree 保护下做低风险小修复
+- **L3**：较少人工盯盘的无人值守运行
+
+多数团队失败，不是因为不会写 prompt，而是因为直接从“想省事”跳到“想全自动”。
+
+### 四、loop 的价值在重复、高频、边界清晰的工作里最明显
+
+像 daily triage、PR babysitter、changelog drafter、dependency sweeper 这类任务，天然适合 loop；而产品决策、架构重写、权限模型变更这类任务，本质上不适合交给 loop 主导。
+
+## 系列结构
+
+- **总览（本篇）**：建立全景认知、主题边界和阅读路径
+- **概念篇（1 篇）**：什么是 loop engineering，和 prompt / harness / goal / workflow 的关系
+- **原语篇（1 篇）**：五个构件 + 状态中枢，loop 到底由哪些积木拼出来
+- **模式篇（1 篇）**：7 类常见 pattern、L0/L1/L2/L3 上线路径、如何从 report-only 起步
+- **迁移篇（1 篇）**：Claude Code / Codex / Cursor 等工具里怎么把同一条 loop 落地
+- **风险篇（1 篇）**：成本、故障、反模式、何时该停、何时不该做
+
+## 系列目录
+
+| # | 标题 | 核心议题 |
+| --- | --- | --- |
+| 01 | [Loop Engineering 是什么](./01-what-is-loop-engineering.md) | 定义、loop vs prompt、loop vs goal、loop vs harness、适用场景 |
+| 02 | [五个构件与状态中枢](./02-five-primitives-and-state.md) | 调度、worktree、skills、connectors、sub-agents、`STATE.md` |
+| 03 | [模式库与上线分级](./03-patterns-and-rollout-levels.md) | Daily Triage、PR Babysitter、CI Sweeper、L0-L3 渐进式上线 |
+| 04 | [跨工具迁移：Claude Code、Codex、Cursor 怎么落地](./04-cross-tool-mapping.md) | 同一条 loop 在不同 agent 环境里的映射关系 |
+| 05 | [风险、成本与反模式](./05-risks-costs-and-anti-patterns.md) | token 成本、验证失败、状态失忆、通知噪音、越权自动化 |
+
+## 阅读路径
+
+- **只想先搞懂这是什么**：本篇 → 01
+- **想自己搭一个能跑的 loop**：本篇 → 02 → 03 → 04
+- **担心自动化风险**：本篇 → 03 → 05
+- **已经在用 Codex / Claude Code**：本篇 → 04 → 05
+- **完整通读**：按 01 → 05 顺序
+
+## 必读文章
+
+围绕 loop engineering 的外部必读，按「先建框架、再落地、最后看演进」分三组。本系列所基于的 [cobusgreyling/loop-engineering](https://github.com/cobusgreyling/loop-engineering) 仓库明确标注 “inspired by Addy Osmani”，所以下面 Addy 那篇是真正的上游标杆文。
+
+### 标杆与概念
+
+- [Loop Engineering — Addy Osmani](https://addyosmani.com/blog/loop-engineering/) — 标杆文（2026/6/7），五个积木块 + 两个产品映射表
+- [The Art of Loop Engineering — LangChain](https://www.langchain.com/blog/the-art-of-loop-engineering) — “agent 本质就是一个 model in a loop”
+- [Anthropic 工程师 11 页 PDF](https://www.facebook.com/datasciencedojo/posts/1036660882217396/) — Anthropic 资深工程师系统阐述（经 Data Science Dojo 流传）
+
+### 实操与工具
+
+- [How I AI: How to Write AI Agent Loops in Claude Code and Codex — Lenny's Newsletter](https://www.lennysnewsletter.com/p/how-i-ai-how-to-write-ai-agent-loops) — 新手向，Claude Code / Codex 落地
+- [Loop Engineering: A Guide for Engineers and Practitioners — Adnan Masood（Medium）](https://medium.com/@adnanmasood/loop-engineering-a-guide-for-engineers-and-practitioners-893bb65ea943)
+- [Loop Engineering: Design AI Loops That Ship While You Sleep — Linas's Newsletter](https://linas.substack.com/p/loop-engineering-complete-guide)
+
+### 进阶与演进史
+
+- [Agentic Loops: From ReAct to Loop Engineering（2026 Guide）— Data Science Dojo](https://datasciencedojo.com/blog/agentic-loops-explained-from-react-to-loop-engineering-2026-guide/)
+- [What Is Loop Engineering? A Complete Guide — Tosea.ai](https://tosea.ai/blog/loop-engineering-ai-agents-complete-guide-2026)
+- [Loop Engineering at Enterprise Grade — Truefoundry](https://www.truefoundry.com/blog/loop-engineering-enterprise-agent-runtime) — 生产 / 企业级“agent runtime”
+- [What Is Loop Engineering? — MindStudio](https://www.mindstudio.ai/blog/what-is-loop-engineering-ai-coding-agents)
+- [Harness Engineering — OpenAI](https://openai.com/index/harness-engineering/) — harness 与 loop 的关系（OpenAI 视角）
+
+## 深读系列（refs/）
+
+对上面 11 篇必读来源逐篇做的费曼式深读，每篇 ≥8000 字，各自抓住一个独特角度，避免雷同。放在 [`./refs/`](./refs/) 子目录，与本系列 01–05 正文互补：正文讲方法，深读讲“别人怎么讲这个方法”。
+
+| # | 深读文章 | 抓的独特角度 |
+| --- | --- | --- |
+| 01 | [Addy Osmani《Loop Engineering》深读](./refs/01-addy-osmani-loop-engineering.md) | 五积木 + 一记忆、双产品映射表、三条人因债 |
+| 02 | [LangChain 纵向 4 层 loop](./refs/02-langchain-nested-loops.md) | 从 model in a loop 到 hill-climbing 的自我改进 |
+| 03 | [Anthropic 工程师的控制系统](./refs/03-anthropic-control-system.md) | 把“停止”设计成控制平面的一等动词 |
+| 04 | [Lenny 新手实操](./refs/04-lenny-claude-code-codex.md) | heartbeat / cron / hook / goal 到工具按钮的映射 |
+| 05 | [Adnan 生产治理](./refs/05-adnan-masood-production-governance.md) | trigger / topology / verifier / stop 与拓扑失效 |
+| 06 | [Linas 三种债](./refs/06-linas-three-debts.md) | 越有效的 loop，欠下的债越深 |
+| 07 | [从 ReAct 到 Loop Engineering](./refs/07-dsd-react-to-loop.md) | 四代智能体循环的演进谱系 |
+| 08 | [Tosea 四层演进](./refs/08-tosea-four-layer-evolution.md) | prompt→context→harness→loop 的宏观坐标 |
+| 09 | [Truefoundry 企业 runtime](./refs/09-truefoundry-enterprise-runtime.md) | 笔记本 loop vs 凌晨 3 点无人值守的 runtime |
+| 10 | [MindStudio 选型手册](./refs/10-mindstudio-good-vs-bad-agent.md) | 四种 loop 架构与好 / 坏 agent 的四维判别 |
+| 11 | [OpenAI《Harness Engineering》](./refs/11-openai-harness-engineering.md) | harness 是 loop 的地基，一手 100 万行战报 |
+
+## 长文版（long-form/）
+
+三篇 1.5 万字独立长文，各从一个角度把本专题展开，正文讲方法、长文给系列之外的统一判断。每篇都补了联网调研拿到的硬证据（真实 token/成本数字、生产失败率、CLI 脚手架、maker/checker 证伪逻辑）。
+
+| # | 长文 | 角度 | 适合谁 |
+| --- | --- | --- | --- |
+| A | [能停的 Loop 才敢上生产](./long-form/01-production-readiness.md) | 生产落地深度解析，统一判断框架 + readiness 自检 | 想把 loop 真正上生产的中高级工程师 |
+| B | [从零搭出你的第一条 Loop](./long-form/02-build-first-loop.md) | 实操教程，含 `loop-init` 脚手架 + `STATE.md`/skill/Actions 完整文件内容 | 想跟着做出第一条 loop 的人 |
+| C | [从 Prompt 到 Loop](./long-form/03-concept-panorama.md) | 认知地图，prompt→context→harness→loop 演进 + 四代循环谱系 + 边界判别 | 想建立全局认知、对齐团队共识的人 |
+
+## 先给一个最实用的心智模型
+
+可以把一个健康的 loop 暂时记成下面这条链：
+
+`调度 -> triage -> 读写状态 -> 隔离执行 -> implementer -> verifier -> 外部系统 -> human gate -> 下一轮`
+
+它不是唯一正确答案，但足够作为大多数工程 loop 的初始模板。之后你做的所有优化，本质上都在调这条链：删掉不必要环节、补上缺失的验证、把风险路径拉回人工。
+
+## 关于这个专题
+
+本专题聚焦可迁移的方法，不复述源仓库全部脚手架、CLI 和展示页内容。因为这块演化很快，文中判断以 **2026-06-28** 的仓库快照为准；其中具体命令、star 数和工具支持面，后续可能变化，但几个方法论核心短期内大概率稳定：
+
+- loop 是控制系统，不是 prompt 模板
+- 状态文件是基本盘
+- maker / checker 分离是底线
+- report-only 起步比“直接自动修复”更重要
+- 成本、审计、kill switch 必须前置，而不是出事故后再补
+
+下一篇：[01 Loop Engineering 是什么](./01-what-is-loop-engineering.md)

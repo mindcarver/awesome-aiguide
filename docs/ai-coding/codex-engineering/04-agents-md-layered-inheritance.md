@@ -1,0 +1,313 @@
+# AGENTS.md 分层机制：monorepo 和子目录规则怎么写
+
+## TL;DR
+
+单个 `AGENTS.md` 对小仓库够用。到了 monorepo、多服务仓库、前后端混合仓库，根目录文件会很快变成规则垃圾场：前端测试命令、后端迁移边界、支付安全要求、移动端构建脚本、文档检查命令全部挤在一起。Codex 读得到，但不一定用得对。
+
+更稳的方式是分层：根目录写全仓库共识，子目录写局部规则，高风险模块写更具体的停靠点和验证要求。OpenAI 官方 AGENTS 指南说明，Codex 会按层级加载指令文件，支持嵌套目录，`AGENTS.override.md` 会优先于同目录的 `AGENTS.md`，也可以通过 `project_doc_fallback_filenames` 配置 fallback 文件名。默认项目说明大小上限为 32 KiB，超过后可能导致指令不完整。分层的目的不是让规则更多，而是让当前任务只看到必要规则。
+
+## 读者定位
+
+本文面向维护大型仓库的 Tech Lead、平台工程师、项目维护者和经常给 Codex 派复杂任务的开发者。你可能已经有根目录 `AGENTS.md`，但开始遇到这些问题：Codex 在 `apps/web` 里读到后端支付规则，在 `services/billing` 里跑前端测试命令，根目录文件越来越长，团队成员复制粘贴规则导致多处过期。
+
+如果你的仓库只有一个包、一个测试命令、少量安全边界，先读上一篇就够。分层适合规则开始出现“局部差异”的仓库。
+
+## 问题：根目录文件会把所有差异压成噪音
+
+Monorepo 的真实状态通常是这样：
+
+- `apps/web` 使用 Next.js、Vitest、Playwright。
+- `services/api` 使用 Node 或 Go，有集成测试和数据库迁移。
+- `services/billing` 涉及发票、税、权限、外部支付服务。
+- `packages/ui` 关注组件 API、Storybook、视觉回归。
+- `docs` 主要需要 Markdown lint 和链接检查。
+
+如果把所有规则都写进根目录，Codex 每次任务都会读到很多无关约束。处理文档 typo 时读到账单税务规则，修 UI 组件时读到数据库迁移禁令，改 API 测试时读到 Storybook 命令。这些信息不是错，但会占上下文，增加误用概率。
+
+另一种失败是反过来：根目录只写笼统规则，局部风险完全没写。Codex 在支付目录工作时不知道需要先停下计划，在迁移目录工作时不知道不能重写已应用迁移，在前端目录工作时不知道应该跑局部测试。
+
+分层机制解决的是“规则放在哪里”的问题。不是每个目录都要有 `AGENTS.md`，而是每条规则应该放在它影响的最小范围内。
+
+## 心智模型：规则半径
+
+写分层规则时，可以用“规则半径”判断位置。
+
+全仓库规则半径最大，放在根目录。比如包管理器、全量检查命令、通用安全边界、最终汇报格式、禁止提交密钥。这些规则对所有任务都成立。
+
+子系统规则半径中等，放在子系统根目录。比如 `apps/web` 的框架约定、前端测试命令、组件放置规则；`services/api` 的数据库测试命令、接口兼容要求。
+
+高风险模块规则半径最小，放在更深目录。比如 `services/billing` 的发票、税、支付权限；`services/auth` 的 token、session、权限边界；`infra` 的部署和 IAM 规则。
+
+不要依赖“冲突覆盖”来管理规则。更好的做法是根目录写共识，子目录写差异。根目录说“不要运行 deploy”，子目录不要再写“可以运行 deploy”，除非这是受控自动化目录，并且写清审批条件。冲突会让 Codex 和人都难以判断优先级。
+
+## 详细机制：发现顺序、override、fallback 和大小限制
+
+OpenAI 官方 AGENTS 指南中，几个机制直接影响工程写法。
+
+第一，Codex 会从较宽范围到当前目录加载指令。官方示例中，从支付目录启动时，预期会先报告 global 文件，再报告仓库根 `AGENTS.md`，最后报告 payments override。这个顺序意味着局部规则更贴近当前任务。
+
+第二，Codex 会在当前目录停止搜索。把规则放得离任务目录太远，会让它污染无关任务；放得太深，又可能被上层目录任务看不到。规则应该贴近它实际约束的代码。
+
+第三，同目录存在 `AGENTS.override.md` 时，它会优先于普通 `AGENTS.md`。官方示例中，`services/payments/AGENTS.md` 会因为同目录存在 override 而被忽略。override 适合强制替代同目录规则，不适合随意叠加个人偏好。
+
+第四，可以配置 fallback 文件名。官方文档示例中，可把 `TEAM_GUIDE.md`、`.agents.md` 加入 `project_doc_fallback_filenames`，同时调高 `project_doc_max_bytes`。配置后，Codex 在每个目录按 `AGENTS.override.md`、`AGENTS.md`、fallback 文件名的顺序检查。团队已有历史文件时可以利用这一点，但要避免多套命名并存造成混乱。
+
+第五，默认项目说明大小上限是 32 KiB。超过限制时，关键规则可能被截断。分层不是让总规则无限增长，而是把局部规则限制在局部任务里。
+
+第六，官方指南给出验证方法：可以用 `codex --cd subdir --ask-for-approval never "Show which instruction files are active."` 检查子目录加载的指令，也可以通过日志或 session 文件审计。团队在改分层规则后，应做一次只读验证。
+
+## 推荐结构：monorepo 分层示例
+
+一个中等规模 monorepo 可以这样组织：
+
+```text
+repo/
+  AGENTS.md
+  apps/
+    web/
+      AGENTS.md
+  packages/
+    ui/
+      AGENTS.md
+  services/
+    api/
+      AGENTS.md
+    billing/
+      AGENTS.md
+  docs/
+    AGENTS.md
+```
+
+根目录只写全局共识：
+
+```markdown
+# AGENTS.md
+
+## Repository Rules
+
+- Use `pnpm`, not `npm` or `yarn`.
+- Keep changes scoped to the requested package.
+- Do not edit `.env*` files.
+- Do not run deploy, publish, or `git push` unless explicitly requested.
+- Ask before changing auth, billing, permissions, CI secrets, or migrations.
+
+## Commands
+
+- Install: `pnpm install`
+- Lint all: `pnpm lint`
+- Type check all: `pnpm typecheck`
+- Test all: `pnpm test`
+
+## Reporting
+
+- Summarize changed files.
+- List commands run and results.
+- Call out tests not run and remaining risks.
+```
+
+`apps/web/AGENTS.md` 只写前端差异：
+
+```markdown
+# apps/web/AGENTS.md
+
+## Web App Rules
+
+- Framework: Next.js App Router.
+- Prefer server components unless browser APIs or hooks are required.
+- Put reusable UI in `packages/ui`; do not duplicate shared components locally.
+- Use existing data-fetching helpers before creating new clients.
+
+## Commands
+
+- Test web: `pnpm --filter web test`
+- Type check web: `pnpm --filter web typecheck`
+```
+
+`services/billing/AGENTS.md` 写高风险边界：
+
+```markdown
+# services/billing/AGENTS.md
+
+## Billing Rules
+
+- Stop and propose a plan before changing invoice calculation, tax logic, payment permissions, or refund behavior.
+- Add regression tests for every behavior change.
+- Do not edit applied migration files.
+- Never rotate API keys or change payment provider settings from Codex.
+
+## Commands
+
+- Test billing: `pnpm --filter billing test`
+```
+
+`docs/AGENTS.md` 写文档仓库规则：
+
+```markdown
+# docs/AGENTS.md
+
+## Documentation Rules
+
+- Keep Markdown concise and link-focused.
+- Use relative links for files in this repository.
+- Do not add images unless explicitly requested.
+
+## Commands
+
+- Lint docs: `./scripts/check.sh lint`
+- Check links: `./scripts/check.sh links`
+```
+
+这样 Codex 在 `docs` 中工作时不会被 billing 规则干扰；在 `services/billing` 工作时会同时看到根目录安全共识和 billing 专属要求。
+
+## 真实工作流案例：支付服务规则怎么落地
+
+假设团队准备让 Codex 修复支付服务中的一个税额四舍五入 bug。错误做法是根目录 prompt 直接写：
+
+```text
+修复 services/billing 的税额计算 bug。
+```
+
+更好的做法是先把 `services/billing/AGENTS.md` 写好，让长期规则常驻。然后给本次任务：
+
+```text
+Goal:
+修复订单税额在三位小数输入时偶发少 0.01 的问题。
+
+Context:
+从 services/billing/tax.ts 和 services/billing/tax.test.ts 开始。
+Issue #2187 有复现样例。
+
+Constraints:
+遵守 services/billing/AGENTS.md。不要改支付 provider 配置，不要改迁移文件。
+
+Done-when:
+先给出计划，不修改代码。计划需要列出预计改动文件、测试用例和验证命令。
+```
+
+Codex 应该因为 billing 规则而先停下计划。计划通过后，再授权执行：
+
+```text
+按确认计划执行。只修改 tax.ts 和 tax.test.ts。
+运行 pnpm --filter billing test。
+最后汇报 diff、测试结果、剩余风险和需要人工确认的财务口径。
+```
+
+这里的重点不是 prompt 复杂，而是稳定规则和本次任务分工清楚。`AGENTS.md` 负责长期边界，prompt 负责本次目标。
+
+## 操作清单：设计分层规则
+
+- 先列出仓库目录和职责，不要直接创建很多文件。
+- 把每条规则标注半径：全仓库、子系统、高风险模块。
+- 根目录只放全仓库共识和最终汇报要求。
+- 子目录只写局部差异，不复制根目录命令。
+- 高风险模块写停靠点：哪些修改必须先 Plan，哪些命令禁止自动运行。
+- 控制每个文件长度；子目录文件优先 10 到 40 行。
+- 避免同一条命令在多层重复，避免过期时多处修改。
+- 少用 `AGENTS.override.md`；使用时写清为什么要替代同目录普通规则。
+- 改完后用只读命令让 Codex 汇报 active instruction files。
+
+## 权衡与风险
+
+分层能降低上下文噪音，但会增加维护面。每新增一层，就多一个可能过期的文件。团队需要把 AGENTS 文件纳入代码审查，尤其是目录移动、测试命令变化、框架迁移、模块归属变化时。
+
+规则太细会让 Codex 行动迟缓。比如每个目录都要求“先问我”，会把低风险任务也拖慢。建议只对高风险模块写强停靠点，对普通模块保留执行空间。
+
+分层也可能制造假安全。写了 billing 规则，不代表 Codex 不能误改 billing。它只是提高上下文质量。真正边界仍要靠审批、沙箱、测试和 code review。
+
+## 常见误区
+
+误区一：每个目录都放一份 `AGENTS.md`。如果目录没有独有规则，就不需要文件。空文件会被跳过，重复文件会浪费上下文。
+
+误区二：子目录复制根目录规则。复制会导致过期和冲突。子目录只写差异。
+
+误区三：把 override 当个人配置。`AGENTS.override.md` 会替代同目录普通规则，适合特殊团队或特殊目录，不适合个人临时偏好。个人偏好应放全局配置或本次 prompt。
+
+误区四：规则互相冲突。根目录说“不改迁移”，子目录说“可以改迁移”，会让审查变难。确实需要例外时，写清审批条件和验证步骤。
+
+误区五：不验证加载结果。分层写完后，要让 Codex 在目标目录只读汇报加载了哪些文件。否则你不知道规则是否真的生效。
+
+## 团队落地：分层规则的治理方式
+
+分层 `AGENTS.md` 一旦铺开，就要有治理方式。没有治理，分层会从“让规则贴近任务”变成“到处都是小文档”。每个目录都写一点，半年后没人知道哪条规则还有效，Codex 也会读到互相重复甚至冲突的指令。
+
+第一项治理是目录级 owner。根目录 owner 负责全仓库共识，子目录 owner 负责局部规则。谁拥有某个模块的上线责任，谁就应该拥有该模块的代理规则。比如支付服务的 owner 最清楚哪些行为必须先停下计划，前端平台 owner 最清楚组件库规则，文档维护者最清楚链接检查命令。
+
+第二项治理是新增规则审批。不是每个团队成员都应该随意新增子目录 `AGENTS.md`。新增文件前要回答三个问题：这个目录是否有长期独有规则？这些规则是否不能放在根目录？是否有 owner 愿意维护？如果只是为了某次任务临时限制范围，不应该新增文件，而应写在本次 prompt。
+
+第三项治理是去重。根目录已经写了“不要改 `.env*`”，子目录不必重复。根目录已经写了最终汇报格式，子目录不必复制。重复会让后续修改变难，也会占用上下文。子目录应该只写差异，例如更窄测试命令、更具体风险、更特殊停靠点。
+
+第四项治理是冲突审计。分层规则最危险的不是多，而是冲突。根目录禁止部署，某个子目录允许部署；根目录要求 pnpm，某个子目录写 npm；根目录要求先计划，子目录允许直接改高风险逻辑。冲突不一定永远错误，但必须显式说明条件。没有条件的冲突会让 Codex 和人类 reviewer 都无所适从。
+
+第五项治理是大小预算。官方默认项目说明上限是 32 KiB，这不是鼓励写到 32 KiB。团队可以为每层设软限制：根目录 80 行以内，普通子目录 40 行以内，高风险目录可以更长但要分节。超过软限制时，优先删重复和背景，必要时把长解释移到普通文档，用链接引用。
+
+第六项治理是变更测试。修改分层规则后，应在目标目录运行只读验证任务，让 Codex 汇报加载了哪些指令和理解到哪些规则。对于 monorepo，可以抽样几个关键目录：前端、后端、支付、文档。验证结果应检查是否有无关规则污染、是否漏掉局部规则、是否出现 override 误用。
+
+第七项治理是版本化迁移。大型仓库重组目录时，AGENTS 文件也要随迁移处理。不要留下旧目录规则，也不要让新目录失去高风险边界。迁移 PR 中可以要求 Codex 或人类列出所有 `AGENTS.md`、`AGENTS.override.md`，逐个确认归属。
+
+最后，分层规则要服务于任务，不服务于组织架构展示。很多公司组织很复杂，但 Codex 需要的是工程差异。两个团队如果共享同一套命令和风险边界，可以共用一份规则；同一团队维护的两个目录如果技术栈完全不同，就应该分开写。规则按行为半径组织，而不是按汇报关系组织。
+
+## 反例分析：分层写错后的真实后果
+
+分层机制本身不复杂，难的是写对粒度。写错粒度后，问题不一定马上暴露，而是在 Codex 执行任务时慢慢变成噪音、遗漏或冲突。
+
+第一种反例是根目录过度集中。根文件里写满所有子系统规则，结果每次任务都加载大量无关内容。Codex 修文档时读到支付风控，改前端样式时读到数据库迁移，处理后端接口时读到 Storybook 规则。无关规则不会直接报错，但会占上下文，让真正相关的规则更难被注意。
+
+第二种反例是子目录过度碎片化。每个小目录都有 `AGENTS.md`，内容只有两三条重复规则。看似精细，实际增加维护成本。目录一迁移，文件就跟着散落；命令一变化，多处都要改。分层不是越细越好，只有存在长期差异的目录才值得单独成层。
+
+第三种反例是高风险规则放太高。比如把“修改 invoice 逻辑必须先得到财务确认”写在根目录。这样所有任务都会看到一条只和 billing 有关的规则，时间久了开发者和 Codex 都会忽略它。高风险规则应放在高风险模块附近，让它在真正相关时更醒目。
+
+第四种反例是高风险规则放太低。比如支付目录下还有 `tax/`、`refunds/`、`providers/`，但规则只放在 `tax/`。当 Codex 从 `services/billing` 根目录工作时，可能看不到 `tax` 的细节。规则应放在能覆盖相关任务入口的位置，而不是机械贴到最深目录。
+
+第五种反例是滥用 override。`AGENTS.override.md` 会替代同目录普通规则。有人为了临时实验加了 override，忘记清理，之后 Codex 在该目录完全看不到原规则。override 应该少用，并在文件里写明为什么替代、何时移除。普通局部差异优先用 `AGENTS.md`。
+
+第六种反例是 fallback 命名混乱。团队既有 `TEAM_GUIDE.md`，又有 `.agents.md`，还有 `AGENTS.md`，不同目录使用不同命名。即使配置能识别，也会让人类维护困难。fallback 是迁移工具，不应成为长期多命名体系。稳定后尽量统一到 `AGENTS.md`。
+
+第七种反例是没有验证目录启动点。Codex 从仓库根启动和从子目录启动，看到的指令链可能不同。团队如果不验证，就会以为某条规则生效，实际任务却没加载。每次新增分层文件后，都应用只读任务在目标目录确认 active instructions。
+
+第八种反例是规则跟代码所有权脱节。某个团队迁走了服务，但 `AGENTS.md` 留在旧目录；新 owner 改了测试命令，却不知道要更新代理规则。分层规则必须跟模块 owner 绑定。没有 owner 的规则，最终会变成误导。
+
+避免这些反例的方法很直接：按规则半径放置，少复制，少 override，统一命名，验证加载，绑定 owner，定期删减。分层的目标不是建立一套复杂配置树，而是让 Codex 在当前目录看到刚好足够的规则。
+
+## 分层审计清单
+
+大型仓库可以每月或每次目录重组后做一次分层审计。审计不需要复杂工具，先列出所有指令文件，再按目录归属逐个检查即可。
+
+第一步，列文件。找出根目录、子目录、override 和 fallback 文件。确认是否存在空文件、重复文件、旧目录残留文件。空文件没有价值，旧目录文件可能误导后续任务。
+
+第二步，看半径。每个文件里的规则都要问：这条规则影响的最小目录是哪一个？如果影响全仓库，放根目录；如果只影响支付，放支付目录；如果只影响某个测试子系统，放对应目录。半径不清的规则通常太抽象，应改写或删除。
+
+第三步，查重复。根目录已有的包管理器、最终汇报、安全边界，不应在每个子目录复制。重复规则会让维护变慢，也会让上下文膨胀。子目录只保留真实差异。
+
+第四步，查冲突。搜索包管理器、测试命令、部署权限、依赖策略、迁移规则等高频冲突点。冲突要么消除，要么写成有条件规则。不要留下两个都像真的规则。
+
+第五步，查命令。每个命令都要能在对应目录或仓库根运行。若命令依赖环境，写明条件。命令不确定时，不要写成强制 Done-when，而写成“优先运行；无法运行时说明原因”。
+
+第六步，查 owner。每个子目录文件都应有实际维护者。没有 owner 的文件要么合并回上层，要么删除。规则没有维护者，迟早成为过期上下文。
+
+第七步，做加载验证。让 Codex 在几个代表目录运行只读任务，汇报 active instruction files 和理解到的规则。人工对照预期。如果它加载了无关规则或漏掉关键规则，就调整文件位置或启动目录。
+
+第八步，记录变更。分层审计的结果应进入 PR 或维护记录，说明删了哪些规则、合并了哪些文件、修正了哪些命令。这样后续团队成员能理解规则树为什么长成现在这样。
+
+这套审计的价值在于防止分层系统腐化。Codex 使用越频繁，项目指令越像真实配置；真实配置就需要 owner、审查和清理。
+
+分层审计还可以和代码所有权结合。每个目录的 owner 在改业务代码时，也顺手看代理规则是否仍然准确。支付 owner 看支付规则，前端 owner 看前端命令，文档 owner 看链接检查。这样审计不会变成平台团队单方面维护所有知识，而是由最了解模块的人维护局部事实。
+
+当两个子目录规则开始重复时，通常说明它们应上提到共同父目录。反过来，根目录规则如果开始出现大量“仅适用于某模块”的条件，通常说明它应下沉到子目录。规则移动不是坏事，它代表团队对规则半径有了更清晰理解。分层文件应随着工程边界变化，而不是固定不动。
+
+对于新建模块，可以先不急着写 `AGENTS.md`。等模块形成稳定命令、风险边界和 owner 后再补。过早写规则容易写成愿望清单；太晚写规则又会让 Codex 重复犯错。一个实用信号是：同类约束在任务 prompt 里重复出现三次，就考虑沉淀到对应目录。
+
+分层规则还要考虑启动目录。很多开发者习惯从仓库根运行 Codex，但任务实际发生在子目录。若希望局部规则稳定生效，就在任务里写 `--cd` 或明确从目标目录启动。否则规则文件存在，不代表每次任务都按预期加载。
+
+审计时也要检查启动习惯是否写进团队手册。规则树设计得再好，如果所有任务都从错误目录启动，局部约束仍然会失效。
+
+因此，目录规则和启动方式要一起设计、一起验证、一起写进示例。
+
+如果团队已经使用 Cloud 或 App，也要确认远程任务默认工作目录。远程环境的启动目录和本地习惯不一致时，最容易出现“本地能加载规则，云端看不到规则”的问题。
+
+## 延伸阅读
+
+- [AGENTS.md 官方指南](https://developers.openai.com/codex/guides/agents-md)
+- [Codex CLI Reference](https://developers.openai.com/codex/cli/reference)
+- [Codex customization](https://developers.openai.com/codex/customization)
+- [Codex Best Practices](https://developers.openai.com/codex/learn/best-practices)
+- [Agent approvals & security](https://developers.openai.com/codex/agent-approvals-security)
