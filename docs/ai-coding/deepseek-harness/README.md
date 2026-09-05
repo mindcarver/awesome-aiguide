@@ -1,6 +1,6 @@
 # DeepSeek Harness 架构深读系列
 
-> 不是使用教程，是架构拆解。41 篇文章把 DeepSeek Harness（`dsh`）这个开源 agent harness 从 Cordis 范式、运行时核心、能力接缝、执行子系统，到源码导读、扩展开发、工程化门禁、横向评测和基座实战，逐层讲透。
+> 不是使用教程，是架构拆解。43 篇文章把 DeepSeek Harness（`dsh`）这个开源 agent harness 从 Cordis 范式、运行时核心、能力接缝、执行子系统，到源码导读、扩展开发、工程化门禁、横向评测和基座实战，逐层讲透。
 
 本系列面向想读懂 `dsh` 源码、写插件做二次开发、或在 Claude Code / Cursor / Codex 之外评估一个"全插件化"开源 harness 的工程师与架构师。它不重复讲"AI 会写代码"，而是回答一个具体问题：**一个把"模型之外的一切"都做成可替换插件的 agent harness，内部到底是怎么运转的、它的可组合性设计代价是什么。**
 
@@ -12,7 +12,7 @@
 - **能力接缝（Capability Seams）**：模型适配、文件系统、命令执行、沙箱、子 agent……每一项都是一个"定义 + 提供者 + 消费者"三角色的可换接缝。换一个 provider 等于换了整个产品。
 - **运行时不变量**："模型可见即可重建"——任何到达模型请求的东西都必须能从会话日志重建，运行时会断言这条规矩。
 
-这三层决定了为什么 `dsh` 值得用 41 篇来拆，也决定了本系列的阅读顺序：先 Cordis（地基），再运行时核心（心脏），再接缝与工具（扩展模型），最后是子系统深潜、源码导读和评测。
+这三层决定了为什么 `dsh` 值得用 43 篇来拆，也决定了本系列的阅读顺序：先 Cordis（地基），再运行时核心（心脏），再接缝与工具（扩展模型），最后是子系统深潜、源码导读和评测。
 
 ## 与《Harness Engineering》系列的关系
 
@@ -41,7 +41,7 @@
 
 ## 系列目录
 
-> 本系列共 41 篇，全部已发布。目录按 11 个章节 + 终章组织；每篇文章仍保留独立发布单元，章节用于给读者提供更清晰的阅读路径。
+> 本系列共 43 篇，全部已发布。目录按 11 个章节 + 终章组织；每篇文章仍保留独立发布单元，章节用于给读者提供更清晰的阅读路径。
 
 ### 第 1 章：DeepSeek Harness 是什么，以及怎么第一次跑起来（2 篇）
 
@@ -93,7 +93,7 @@
 | 24 | [dsh 的 Jobs 与 Workflow：后台任务和编排脚本](./24-jobs-and-workflow-ralph.md) | ctx.jobs 注册表、workflow engine、Ralph 结构化输出 |
 | 25 | [dsh 的 Web 搜索抓取与 Skills 技能系统](./25-web-search-fetch-and-skills.md) | ctx.web 统一多 provider、ctx.skills 按需加载技能体 |
 
-### 第 7 章：从短对话到长期 Agent：上下文、记忆、计划与多智能体（5 篇）
+### 第 7 章：从短对话到长期 Agent：上下文、记忆、计划与多智能体（6 篇）
 
 | # | 文章 | 重点 |
 |---|------|------|
@@ -102,6 +102,7 @@
 | 29 | [dsh 的 Plan Mode 与 Goal：一段软引导与一个事件溯源的生命周期](./29-plan-mode-and-goal.md) | turn 边界 flush、goal 栈与模型工具、plan 投影 stateVersion 2 |
 | 30 | [dsh 的子 Agent 与多智能体：怎么调度另一个 agent](./30-subagents-multi-agent.md) | 六种 subagent provider、并行委派与后台优先、审批钉定 never、实验性 Agent Teams |
 | 31 | [dsh 的 web-schedule：会话内的定时、提醒与自动化](./31-web-schedule-timer-automation.md) | schedule/change v1 事件流、至少一次交付、绝对时间权威、冷热恢复 |
+| 55 | [dsh 子代理模型路由：授权-选择-执行三层](./55-dsh-subagent-model-routing.md) | 精确路由白名单、会话级快照、执行器复核；能力门显式拒绝、fork 因 KV 缓存禁用选择 |
 
 ### 第 8 章：协议与客户端：MCP、ACP、Headless、Web Client 与自指 Agent（6 篇）
 
@@ -132,11 +133,12 @@
 | 45 | [dsh 的文档即代码：脚本生成图、目录与校验门禁](./45-docs-as-code-autogen-graphs-catalogs.md) | 128 个脚本入口、gen/verify 同源、graph-atlas 三档图、type-equiv 逐符号比对 |
 | 46 | [dsh 的 i18n 翻译配对与质量门禁：双语文档怎么不腐烂](./46-i18n-translation-pairing-and-quality-gates.md) | translation-pairing、doc-budgets、translation-prompt 双向渲染、lefthook 门禁 |
 
-### 第 11 章：把 dsh 当基座：实战与生态（1 篇）
+### 第 11 章：把 dsh 当基座：实战与生态（2 篇）
 
 | # | 文章 | 重点 |
 |---|------|------|
 | 49 | [dsh 当基座：能力审计与三条红线](./49-dsh-as-base-capability-audit.md) | 五个进入面、三块能力底座、三条红线；单用户产品可盖，多用户需自包服务层 |
+| 51 | [dsh 插件生态：四千个插件、五个市场和一场度量战争](./51-dsh-plugin-ecosystem-measure-war.md) | 星数榜污染 vs 下载榜、真实项目盘点、oh-my-dsh 现象、挑插件判断 |
 
 ### 终章：dsh 的位置：架构横评与可组合性的工程哲学（1 篇）
 
