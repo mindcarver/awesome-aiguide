@@ -1,6 +1,6 @@
 # DeepSeek Harness 架构深读系列
 
-> 不是使用教程，是架构拆解。41 篇文章把 DeepSeek Harness（`dsh`）这个开源 agent harness 从 Cordis 范式、运行时核心、能力接缝、执行子系统，到源码导读、扩展开发、工程化门禁和横向评测，逐层讲透。
+> 不是使用教程，是架构拆解。41 篇文章把 DeepSeek Harness（`dsh`）这个开源 agent harness 从 Cordis 范式、运行时核心、能力接缝、执行子系统，到源码导读、扩展开发、工程化门禁、横向评测和基座实战，逐层讲透。
 
 本系列面向想读懂 `dsh` 源码、写插件做二次开发、或在 Claude Code / Cursor / Codex 之外评估一个"全插件化"开源 harness 的工程师与架构师。它不重复讲"AI 会写代码"，而是回答一个具体问题：**一个把"模型之外的一切"都做成可替换插件的 agent harness，内部到底是怎么运转的、它的可组合性设计代价是什么。**
 
@@ -41,7 +41,7 @@
 
 ## 系列目录
 
-> 本系列共 40 篇，全部已发布。目录按 10 个章节 + 终章组织；每篇文章仍保留独立发布单元，章节用于给读者提供更清晰的阅读路径。
+> 本系列共 41 篇，全部已发布。目录按 11 个章节 + 终章组织；每篇文章仍保留独立发布单元，章节用于给读者提供更清晰的阅读路径。
 
 ### 第 1 章：DeepSeek Harness 是什么，以及怎么第一次跑起来（2 篇）
 
@@ -131,6 +131,12 @@
 |---|------|------|
 | 45 | [dsh 的文档即代码：脚本生成图、目录与校验门禁](./45-docs-as-code-autogen-graphs-catalogs.md) | 128 个脚本入口、gen/verify 同源、graph-atlas 三档图、type-equiv 逐符号比对 |
 | 46 | [dsh 的 i18n 翻译配对与质量门禁：双语文档怎么不腐烂](./46-i18n-translation-pairing-and-quality-gates.md) | translation-pairing、doc-budgets、translation-prompt 双向渲染、lefthook 门禁 |
+
+### 第 11 章：把 dsh 当基座：实战与生态（1 篇）
+
+| # | 文章 | 重点 |
+|---|------|------|
+| 49 | [dsh 当基座：能力审计与三条红线](./49-dsh-as-base-capability-audit.md) | 五个进入面、三块能力底座、三条红线；单用户产品可盖，多用户需自包服务层 |
 
 ### 终章：dsh 的位置：架构横评与可组合性的工程哲学（1 篇）
 
