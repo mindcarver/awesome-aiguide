@@ -133,12 +133,11 @@
 | 45 | [dsh 的文档即代码：脚本生成图、目录与校验门禁](./45-docs-as-code-autogen-graphs-catalogs.md) | 128 个脚本入口、gen/verify 同源、graph-atlas 三档图、type-equiv 逐符号比对 |
 | 46 | [dsh 的 i18n 翻译配对与质量门禁：双语文档怎么不腐烂](./46-i18n-translation-pairing-and-quality-gates.md) | translation-pairing、doc-budgets、translation-prompt 双向渲染、lefthook 门禁 |
 
-### 第 11 章：把 dsh 当基座：实战与生态（2 篇）
+### 第 11 章：把 dsh 当基座：实战与生态（1 篇）
 
 | # | 文章 | 重点 |
 |---|------|------|
 | 49 | [dsh 当基座：能力审计与三条红线](./49-dsh-as-base-capability-audit.md) | 五个进入面、三块能力底座、三条红线；单用户产品可盖，多用户需自包服务层 |
-| 51 | [dsh 插件生态：四千个插件、五个市场和一场度量战争](./51-dsh-plugin-ecosystem-measure-war.md) | 星数榜污染 vs 下载榜、真实项目盘点、oh-my-dsh 现象、挑插件判断 |
 
 ### 终章：dsh 的位置：架构横评与可组合性的工程哲学（1 篇）
 

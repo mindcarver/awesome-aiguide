@@ -1,5 +1,7 @@
 # dsh 当基座：能力审计与三条红线
 
+![dsh 作为产品基座的能力审计总览](imgs/01-framework-base-capability-map.webp)
+
 > 把 DeepSeek Harness（`dsh`）从"每天打开的 CLI"变成"自己产品底下的基座"，要回答的是另一组问题：产品怎么把它装进来（Python SDK、headless、ACP、Web 插槽、工具插件，五个进入面）；装进来之后能拼什么（自动化、状态、配置分发，三块底座）；以及哪里会翻车（三条红线：它不肯当服务器，地基每几天动一次，执行面只会一种语言）。本篇按 v0.1.3-alpha.1（2026 年 9 月 4 日）的源码和官方文档逐项判定，每项给可用、勉强、不可用三档结论。总判定：单用户桌面工具今天就能盖；多用户服务要么自己包一层，要么再等。
 
 ## "当基座"是另一件事
@@ -24,9 +26,15 @@ CLI 用户打开 Web 界面或终端，和 agent 对话，让它读代码、改�
 
 ## 五个进入面：产品怎么把 dsh 装进来
 
+![dsh 的五个产品进入面](imgs/02-framework-five-entry-surfaces.webp)
+
 先给五个进入面一个统一的坐标，不然它们像五个互不相干的按钮。你的产品和 `dsh` 之间只存在三种关系身份：控制面（你的代码驱动它的会话）、扩展面（你给它的能力树加东西）、界面（你改变用户看到的东西）。Python SDK、headless、sdk profile、ACP 都是控制面，差别在进程边界和协议；工具插件和 MCP 是扩展面；Web 插槽是界面。五个进入面按嵌入深度排，从"整个引擎住进你的进程树"到"往它身上拧一颗螺丝"。一个真实产品通常同时占两三个身份：交易台用 SDK 做控制面、用工具插件做扩展面、用插槽卡片做界面。身份分得清，后面的判定就不会乱。
 
 ### Python SDK：整个引擎住进你的进程树
+
+![Python SDK 驱动 dsh 子进程的进程树](imgs/03-flowchart-python-sdk-process-tree.webp)
+
+![显式 dsh_home 隔离产品实例与本机 CLI](imgs/18-flowchart-sdk-home-isolation.webp)
 
 判定：可用，带两个条件。
 
@@ -44,6 +52,8 @@ CLI 用户打开 Web 界面或终端，和 agent 对话，让它读代码、改�
 
 ### headless 与 sdk profile：进程外的两种姿势
 
+![headless 与 sdk profile 的控制方式对比](imgs/04-comparison-headless-versus-sdk.webp)
+
 判定：可用。
 
 `dsh --profile headless "任务"` 是一次性执行：跑完退出，stdout 打最终答案，退出码 0 或 1，不开端口，不能追问。注意输出是纯文本不是 JSON，要结构化结果就走 SDK。它适合外层 cron 和 CI 调用。交易台"每天收盘后跑一次复盘"这种动作，headless 是自然选择，定时逻辑归外层。
@@ -54,6 +64,8 @@ CLI 用户打开 Web 界面或终端，和 agent 对话，让它读代码、改�
 
 ### ACP：接进编辑器，只当控制面
 
+![ACP 的控制面与私有展示数据边界](imgs/05-framework-acp-control-boundary.webp)
+
 判定：可用，边界清晰。
 
 ACP（Agent Client Protocol）是编辑器和 agent 通话的标准协议。`dsh --profile acp` 让 `dsh` 作为 server 被 Zed 这类客户端驱动：一条连接多个会话，支持列出、恢复、关闭会话，设置模型，弹权限询问，挂 MCP server。权限询问这一条值得基座用户多看一眼：ACP 客户端可以充当审批的应答方，这意味着走 ACP 的 `dsh` 实例保留了 ask 能力，agent 请求升级权限时编辑器会弹真问题给真人。协议文档同时写明它的定位是 automation-only，wire 上不暴露任何私有展示数据，聊天卡片、任务清单、计划这类界面数据拿不到。
@@ -63,6 +75,8 @@ ACP（Agent Client Protocol）是编辑器和 agent 通话的标准协议。`dsh
 交易台对应：把 `dsh` 接进自己的编辑器或自研客户端当控制面，可以；想拿 ACP 当产品界面的数据源，不行。你的产品的界面必须走 Web 插槽或 SDK 这两条路。
 
 ### Web 插槽：改得了聊天，加不了页面
+
+![Web 插槽能扩展与需要 fork 的边界](imgs/06-comparison-web-slots-boundary.webp)
 
 判定：勉强。
 
@@ -76,6 +90,10 @@ Web 界面的扩展机制是插槽（slots），一套类型化的 React 组合�
 
 ### 工具插件与 MCP：扩展面里最硬的一块
 
+![Cordis 工具插件、MCP 与执行前 guard](imgs/07-framework-tool-plugin-mcp-guard.webp)
+
+![stdio MCP 启动时的密钥环境变量清洗](imgs/19-flowchart-mcp-secret-filter.webp)
+
 判定：可用，五个面里最硬的。
 
 自研工具走 TypeScript Cordis 插件：注册工具，参数自动校验，输出归一化 JSON，自带界面卡片钩子。关键是执行前的策略钩子，allow、deny、ask 三种裁决。交易台的下单工具就在这里挂风控：金额超限 ask，黑名单品种 deny。旁边还有一个更硬的 guard 接口，裁决一旦 deny 就单调不可放行。这两个挂点在后面红线三的讨论里还会回来，它们是 harness 级的风控原语，不是外挂脚本。
@@ -87,6 +105,12 @@ MCP（Model Context Protocol，给 agent 接外部工具的开放协议）消费
 MCP 的边界：只桥接工具，resources 和 prompts 不桥。断了以后的行为也有明确文档：自动重连带退避，工具在断连期间保持列出但调用失败，重连预算耗尽后工具注销、重连停止，直到 reload 或重启。
 
 ## 能力底座：装进来之后能拼什么
+
+![交易工作台接入 dsh 的整体拼装架构](imgs/08-framework-trading-workbench-architecture.webp)
+
+![jobs、workflow 与 schedule 的自动化边界](imgs/09-comparison-automation-three-parts.webp)
+
+![会话状态、凭证与 preset 的分发底座](imgs/10-framework-state-credentials-distribution.webp)
 
 进入面解决"怎么进来"，底座解决"进来之后用什么"。先把交易台拼好后的整体形状画出来，再逐块拆：
 
@@ -109,6 +133,8 @@ MCP 的边界：只桥接工具，resources 和 prompts 不桥。断了以后的
 
 ## 红线一：它不肯当服务器
 
+![本机回环 Web 与多用户服务之间的红线](imgs/11-infographic-red-line-no-server.webp)
+
 三个事实，都是官方写死的。
 
 出厂 CLI 拒绝把 Web 服务绑到 0.0.0.0，`dsh web` 默认只听本机回环，命令行上直接传 `--host 0.0.0.0` 会被拒绝。webserver 的文档写明载体进程自身不带 TLS、认证和 Origin 策略；配置面允许改绑定，但安全责任全部归组装的人。Web 界面支持多会话、多 workspace，那是同一个用户的多会话，不是多租户；浏览器侧有每次启动轮换的令牌和签名 cookie，但那是单用户本机姿态的认证，防的是同机其他进程，不是防互联网。
@@ -121,6 +147,8 @@ MCP 的边界：只桥接工具，resources 和 prompts 不桥。断了以后的
 
 ## 红线二：地基每几天动一次
 
+![pre-1.0 的快速发版与跟版审计节奏](imgs/12-timeline-red-line-fast-moving-foundation.webp)
+
 节奏先摆出来：8 月 19 日到 9 月 4 日，十个 release。README 用全大写写着 THERE WILL BE COMPATIBILITY-BREAKING CHANGES。近两周的破坏性变更实例：会话持久化 API 改成生命周期作用域的句柄模型，SQLite 会话持久化后端整个移除，会话格式升 v2。这些不是边角料，全是基座用户最依赖的地基。
 
 升级痛还有一层机制，值得拆开看。官方全仓 252 个包锁步发版，但 npm 的 latest 标签不跟着预发布走。社区实测的漂移样例：`@deepseek-ai/dsh-agent` 的 latest 解析到 0.1.0-rc.6，实际最新发布是 0.1.1-rc 系。单独安装某个 `@deepseek-ai/dsh-*` 包会安静地装到旧版本；错配不报安装错误，以类型错误的形式延迟爆炸，而且报错分散，没有一条可搜索的错误串能定位根因。走 Python SDK 的用户天然免疫这半个坑：runtime 与 SDK 版本互锁，整体装整体换。
@@ -130,6 +158,10 @@ MCP 的边界：只桥接工具，resources 和 prompts 不桥。断了以后的
 对基座用户，含义就是一句话：每次跟版都是一次源码级 diff。把一次升级日摊开看更具体。周一上游发版：你先跑一遍自己的扩展面测试（工具插件、插槽卡片、preset），绿了再看 changelog 里标破坏的三条：会话持久化句柄模型改了，你的代码如果直接碰过持久化 API 就要改；SQLite 会话后端移除，你的存储配置里如果还引用它，启动就失败；会话格式 v2，旧会话靠迁移读，你的外部分析脚本如果自己解析过 JSONL 就要重写。半天到两天不等，取决于你踩了几层。三个缓解，按性价比排。第一，走 Python SDK 这条路，升级是一个整体动作。第二，扩展面踩得越浅冲刷越小：能用 MCP 解决的不写深度界面插件，能挂插槽的不 fork 布局。社区最大的发行版 oh-my-dsh 的口号是"Overlay, not a fork"，overlay 的跟版成本远低于 fork，这是用脚投票的结果。第三，把跟版写进 CI，每周对上游 diff 一次自己的扩展面。这笔税在 pre-1.0 阶段省不掉，能选的只有交税的姿势。
 
 ## 红线三：执行面只会一种语言
+
+![Python 控制面与 TypeScript 执行面的分界](imgs/13-comparison-red-line-one-runtime-language.webp)
+
+![交易工具在 ask、deny 与单调 guard 下的风控门](imgs/20-flowchart-risk-control-gates.webp)
 
 最容易混的一点：两个"Python"不是一回事。
 
@@ -141,6 +173,8 @@ MCP 的边界：只桥接工具，resources 和 prompts 不桥。断了以后的
 
 ## 常见误解
 
+![三个常见误解的边界校正](imgs/14-comparison-three-common-misconceptions.webp)
+
 把审计中反复出现的三个混淆单独拎出来。
 
 误解一：SDK 是 Python 的，所以模型能跑 Python。控制面和执行面是两个世界，前文红线三整节都在拆这条。SDK 的 Python 停在你的进程里，模型写的代码进 code-runtime，那里出厂只有 TypeScript。
@@ -151,6 +185,8 @@ MCP 的边界：只桥接工具，resources 和 prompts 不桥。断了以后的
 
 ## 从审计到动工：一个两周的验证切片
 
+![从 SDK 到并发压测的两周验证切片](imgs/15-timeline-two-week-validation-slice.webp)
+
 判定表说"能盖"，落到动工还差一个最小可信切片。给基座用户一条两周的验证路径，每天都是可回滚的。
 
 第一周搭控制面和扩展面。第一天，pip 装 SDK，起一个 harness，跑通"说句话拿回应"，确认 dsh_home 隔离生效（你的实例看不到你本机 CLI 的会话）。第二三天，接一个最便宜的 MCP（比如行情只读 server），确认工具自动进表、调用超时和断连行为符合预期。第四五天，写第一个自研工具插件，故意带上风控钩子：金额超限 ask、黑名单 deny，验证 ask 在 SDK 场景下的表现（无人应答时它失败关闭，不会挂着等）。这半天会顺便教会你 approval 语义在无人值守下的真实形状。
@@ -158,6 +194,8 @@ MCP 的边界：只桥接工具，resources 和 prompts 不桥。断了以后的
 第二周拼自动化和分发。第六七天，把同一个研究任务分别用 SDK 和 headless 跑，外部 cron 触发 headless 版，对比两条路的运维手感。第八九天，把这两周的配置收进一个 preset，从零目录启动验证"三步装机"成立。第十天，压一轮并发：同时开三个 harness 实例各跑一个会话，看资源占用和稳定性。两周结束你手里就有：一条自动化链路、一个带风控的工具、一个可分发的配置包、一份自己测出来的性能底数。判断要不要继续投入，这四样比任何评测文章都硬。
 
 ## 判定表：你的产品能不能盖
+
+![产品形态对应绿黄红选型结论](imgs/16-comparison-product-fit-decision.webp)
 
 | 产品形态 | 判定 | 关键依赖 |
 |---|---|---|
@@ -173,7 +211,11 @@ MCP 的边界：只桥接工具，resources 和 prompts 不桥。断了以后的
 
 比表更实用的一条判断标准：数你的产品需要 `dsh` 的哪几层。只要工具挂架、审批门、凭证、会话持久化，踩得浅，今天就能盖，冲刷可控。一旦需要整页界面或多用户，你就在用它的未来下注。这个"数层"动作还有第二个用途：它决定你的升级成本。踩一层的人跟版是看 changelog，踩五层的人跟版是做代码审计。
 
+![按产品所踩层数预估升级成本](imgs/17-framework-count-your-layers.webp)
+
 ## 边界：判定会过期，性能要自测
+
+![依据复查、隔离压测与判定更新的审计刷新闭环](imgs/21-flowchart-refresh-the-audit.webp)
 
 这份审计有保质期。pre-1.0 的意思是，任何一条"不可用"都可能在下个版本翻过来：服务化姿态和 Python 执行后端已经以实验形态存在于仓库里。翻新这份表的成本不高，盖产品前值得重查一遍。重查时别从结论查起，从依据查起：本文每个判定都锚在一份具体文档或一段源码上（web-server 文档的绑定语义、schedule 文档的 delivery mode、SDK README 的同步接口），把那几份文档的当前版本再读一遍，比读任何二手转述都快。
 
