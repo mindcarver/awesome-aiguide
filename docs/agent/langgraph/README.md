@@ -40,12 +40,12 @@
 
 | # | 文章 | 重点 | 状态 |
 |---|------|------|------|
-| 06 | 人审不是加个按钮：LangGraph interrupt 落地的六个坑 | interrupt/Command(resume)、幂等、超时兜底 | 规划中 |
-| 07 | 子图一嵌，状态就丢？LangGraph Subgraph 的隔离与透传 | checkpoint namespace、streaming 不透传 | 规划中 |
-| 08 | 条件边返回 50 个 Send 之后：LangGraph 并行分支与状态合并 | Send、map-reduce、合并秩序 | 规划中 |
-| 09 | 别为了多 Agent 而多 Agent：LangGraph Supervisor、Swarm 与放弃的时刻 | 多 agent 模式选型与量化对比 | 规划中 |
-| 10 | 前端拿不到 token？LangGraph Streaming 七种模式与前端联调 | stream_mode、v2 StreamPart、useStream | 规划中 |
-| 11 | 从 create_agent 到 deepagents：LangGraph 高层抽象省了什么、藏了什么 | middleware、agent harness、降级到底层 | 规划中 |
+| 06 | [人审不是加个按钮：LangGraph interrupt 落地的六个坑](./06-interrupt-human-in-the-loop.md) | interrupt/Command(resume)、幂等、超时兜底 | 已发布 |
+| 07 | [子图一嵌，状态就丢？LangGraph Subgraph 的隔离与透传](./07-subgraph-isolation-and-passthrough.md) | checkpoint namespace、streaming 不透传 | 已发布 |
+| 08 | [条件边返回 50 个 Send 之后：LangGraph 并行分支与状态合并](./08-send-parallel-state-merge.md) | Send、map-reduce、合并秩序 | 已发布 |
+| 09 | [别为了多 Agent 而多 Agent：LangGraph Supervisor、Swarm 与放弃的时刻](./09-multi-agent-supervisor-swarm.md) | 多 agent 模式选型与量化对比 | 已发布 |
+| 10 | [前端拿不到 token？LangGraph Streaming 七种模式与前端联调](./10-streaming-modes-and-frontend.md) | stream_mode、v2 StreamPart、useStream | 已发布 |
+| 11 | [从 create_agent 到 deepagents：LangGraph 高层抽象省了什么、藏了什么](./11-create-agent-middleware-deepagents.md) | middleware、agent harness、降级到底层 | 已发布 |
 
 ### 第三部分 · 生产
 

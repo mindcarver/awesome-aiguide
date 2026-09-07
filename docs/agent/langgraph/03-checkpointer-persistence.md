@@ -75,6 +75,6 @@ checkpointer 引入了一个必须运维的有状态组件：数据库连接、�
 
 ## 延伸阅读
 
-- [Persistence 概念文档](https://docs.langchain.com/oss/python/langgraph/persistence)：threads、快照结构与 durability
-- [Checkpointers 参考](https://docs.langchain.com/oss/python/langgraph/checkpointers)：内置实现与自定义 checkpointer
-- [Use Time Travel](https://docs.langchain.com/oss/python/langgraph/use-time-travel)：回放与分叉的官方指南
+- [Persistence 概念文档](https://docs.langchain.com/oss/python/langgraph/persistence.md)：threads、快照结构与 durability
+- [Checkpointers 参考](https://docs.langchain.com/oss/python/langgraph/checkpointers.md)：内置实现与自定义 checkpointer
+- [Use Time Travel](https://docs.langchain.com/oss/python/langgraph/use-time-travel.md)：回放与分叉的官方指南

@@ -92,6 +92,6 @@ reducer 模型的成本是显性的：你得想清楚每个 key 的合并语义�
 
 ## 延伸阅读
 
-- [Graph API 概念文档](https://docs.langchain.com/oss/python/langgraph/graph-api)：State、reducer、边的权威说明
+- [Graph API 概念文档](https://docs.langchain.com/oss/python/langgraph/graph-api.md)：State、reducer、边的权威说明
 - [Thinking in LangGraph](https://docs.langchain.com/oss/python/langgraph/thinking-in-langgraph)：官方写的设计原则，含「状态存原始数据」的出处
 - [GRAPH_RECURSION_LIMIT 错误说明](https://docs.langchain.com/oss/python/langgraph/errors/GRAPH_RECURSION_LIMIT)：默认 25 与调参位置

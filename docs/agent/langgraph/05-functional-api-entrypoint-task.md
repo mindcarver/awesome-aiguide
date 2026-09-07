@@ -87,6 +87,6 @@ def weekly(user_id: str) -> str:
 
 ## 延伸阅读
 
-- [Functional API 文档](https://docs.langchain.com/oss/python/langgraph/functional-api)：entrypoint/task 语义与重放机制
-- [Choosing your approach](https://docs.langchain.com/oss/python/langgraph/choosing-apis)：官方的选型建议
-- [Graph API 文档](https://docs.langchain.com/oss/python/langgraph/graph-api)：对照阅读两套模型的差异
+- [Functional API 文档](https://docs.langchain.com/oss/python/langgraph/functional-api.md)：entrypoint/task 语义与重放机制
+- [Choosing your approach](https://docs.langchain.com/oss/python/langgraph/choosing-apis.md)：官方的选型建议
+- [Graph API 文档](https://docs.langchain.com/oss/python/langgraph/graph-api.md)：对照阅读两套模型的差异
