@@ -11,6 +11,7 @@ README 负责展示项目门面；这里负责承载更完整的学习路线、�
 | 不知道从哪里开始 | [AI 知识地图](./knowledge-map.md) |
 | 按自己的身份学习 | [角色学习路径](./paths/) |
 | 选择 AI 编程工具 | [AI 编程](./ai-coding/) |
+| 用 AI 干日常办公的活 | [AI 办公](./ai-office/) |
 | 第一次学习 Agent | [Agent 快速开始](./agent/getting-started/) |
 | 学习 Agent / RAG 工程 | [Agent 学习路径](./agent/) |
 | 查看一手评测与选型结论 | [AI / 大模型 / Agent 评测](./evaluation/) |
@@ -31,6 +32,7 @@ README 负责展示项目门面；这里负责承载更完整的学习路线、�
 | [机器学习学习路径](./machine-learning/) | 从经典 ML 到深度学习到前沿方向，51 篇系列文章 | 已启动 |
 | [角色学习路径](./paths/) | 前端、后端、AI 应用开发者、DevOps、产品经理和普通人的入口 | 已启动 |
 | [AI 编程](./ai-coding/) | AI 编程工具、IDE、CLI agent、代码评测 | 已启动 |
+| [AI 办公](./ai-office/) | 面向普通人的 AI 办公智能体实战系列（WorkBuddy 起步） | 已启动 |
 | [Agent](./agent/) | Agent 框架、工作流、多 agent、工具调用 | 已启动 |
 | [项目收藏](./project-collections/) | AI 项目收藏、工具分类、生态入口、专题素材池 | 已启动 |
 | [AI 架构决策](./ai-architecture-decisions.md) | RAG / Fine-tune / Agent / Workflow 选型决策树 | 已启动 |

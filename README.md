@@ -78,6 +78,10 @@
   <td><a href="./docs/paths/">角色学习路线</a> — 前端 / 后端 / AI 应用 / DevOps / 产品 / 普通人</td>
 </tr>
 <tr>
+  <td align="center">用 AI 干日常办公的活</td>
+  <td><a href="./docs/ai-office/">AI 办公实战系列</a> — 把 WorkBuddy 用成 AI 同事：机制、场景与边界，不要求技术背景</td>
+</tr>
+<tr>
   <td align="center">建立 AI 技术判断力</td>
   <td><a href="./docs/knowledge-map.md">知识图谱</a> — 身份、能力、工具、项目、风险全景图</td>
 </tr>
