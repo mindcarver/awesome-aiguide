@@ -51,12 +51,12 @@
 
 | # | 文章 | 重点 | 状态 |
 |---|------|------|------|
-| 12 | Agent 跑一半挂了：LangGraph 错误分类、重试与补偿设计 | 四类错误、RetryPolicy、error_handler | 规划中 |
-| 13 | LangGraph Checkpoint 不是免费的：一次生产事故复盘 | 表膨胀、TTL、schema 迁移、DeltaChannel | 规划中 |
-| 14 | 循环图为什么难调试：LangGraph 可观测与测试实战 | tracing 模型、节点单测、Studio | 规划中 |
-| 15 | 没有评测的 LangGraph Agent 只是 demo：评测与回归实战 | 轨迹评测、replay 回归、CI | 规划中 |
-| 16 | 工具一多，权限就是产品：LangGraph Agent 的安全边界 | 权限分级、tool 审批、secrets 不进 state | 规划中 |
-| 17 | 自部署还是买平台：LangGraph 部署形态与成本账 | 开源自部署、Agent Server、定价 | 规划中 |
+| 12 | [Agent 跑一半挂了：LangGraph 错误分类、重试与补偿设计](./12-error-handling-retry-compensation.md) | 四类错误、RetryPolicy、error_handler | 已发布 |
+| 13 | [LangGraph Checkpoint 不是免费的：一次生产事故复盘](./13-checkpointer-production-ops.md) | 表膨胀、TTL、schema 迁移、DeltaChannel | 已发布 |
+| 14 | [循环图为什么难调试：LangGraph 可观测与测试实战](./14-debugging-testing-observability.md) | tracing 模型、节点单测、Studio | 已发布 |
+| 15 | [没有评测的 LangGraph Agent 只是 demo：评测与回归实战](./15-eval-and-regression.md) | 轨迹评测、replay 回归、CI | 已发布 |
+| 16 | [工具一多，权限就是产品：LangGraph Agent 的安全边界](./16-security-and-permissions.md) | 权限分级、tool 审批、secrets 不进 state | 已发布 |
+| 17 | [自部署还是买平台：LangGraph 部署形态与成本账](./17-deployment-and-cost.md) | 开源自部署、Agent Server、定价 | 已发布 |
 
 ### 番外与收官
 
