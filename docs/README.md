@@ -39,7 +39,7 @@ README 负责展示项目门面；这里负责承载更完整的学习路线、�
 | [RAG](./agent/ai-app-tutorials/rag/00-reading-guide.md) | 知识库、解析、切片、向量检索、Agentic RAG 与评测 | 持续建设 |
 | [MCP 与工具调用](./ai-coding/claude-code-engineering/17-mcp-mental-model.md) | MCP server、工具接入、权限边界与典型组合 | 持续建设 |
 | [Workflow](./agent/ai-app-tutorials/agent-workflow/workflow-basics.md) | 工作流、Agent 编排、Human-in-the-loop 与生产控制 | 持续建设 |
-| [LangGraph 系列](./agent/langgraph/README.md) | LangGraph 生产实战：引擎心智模型、人审落地、checkpoint 运维、部署成本与选型 | 连载中 |
+| [LangGraph 系列](./agent/langgraph/README.md) | LangGraph 生产实战：引擎心智模型、人审落地、checkpoint 运维、部署成本与选型 | 已完结（20 篇） |
 | [本地模型部署](./local-llm/qwen3-next-80b-a3b-3090-deploy.md) | 消费级 GPU 部署、性能实测与踩坑记录 | 已启动 |
 | Model API | OpenAI、Anthropic、Gemini、本地模型和部署 | 待建设 |
 
