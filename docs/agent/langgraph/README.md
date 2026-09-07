@@ -31,10 +31,10 @@
 | # | 文章 | 重点 | 状态 |
 |---|------|------|------|
 | 01 | [先问一句：你的 Agent 真的需要 LangGraph 吗](./01-do-you-really-need-langgraph.md) | 引擎定位、v1 分层倒转、「不该用」判断线 | 已发布 |
-| 02 | 读懂 Reducer，才算读懂 LangGraph：节点、状态与增量更新 | superstep、reducer、Overwrite、recursion_limit | 规划中 |
-| 03 | LangGraph 持久化拆解：Checkpointer 到底帮你存了什么 | thread_id、快照边界、replay/fork、durability | 规划中 |
-| 04 | Agent 越聊越贵：LangGraph 三套记忆的边界与 token 账单 | checkpointer vs Store vs messages 管理 | 规划中 |
-| 05 | 不画图写 LangGraph：@entrypoint、@task 与两种范式的选择 | 函数式 API、replay 恢复、选型 | 规划中 |
+| 02 | [读懂 Reducer，才算读懂 LangGraph：节点、状态与增量更新](./02-reducer-state-incremental-updates.md) | superstep、reducer、Overwrite、recursion_limit | 已发布 |
+| 03 | [LangGraph 持久化拆解：Checkpointer 到底帮你存了什么](./03-checkpointer-persistence.md) | thread_id、快照边界、replay/fork、durability | 已发布 |
+| 04 | [Agent 越聊越贵：LangGraph 三套记忆的边界与 token 账单](./04-memory-and-token-cost.md) | checkpointer vs Store vs messages 管理 | 已发布 |
+| 05 | [不画图写 LangGraph：@entrypoint、@task 与两种范式的选择](./05-functional-api-entrypoint-task.md) | 函数式 API、replay 恢复、选型 | 已发布 |
 
 ### 第二部分 · 控制
 
